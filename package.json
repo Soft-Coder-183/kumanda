@@ -1,0 +1,14 @@
+{
+  "name": "kumanda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Yerel Claude Code'u ve proje ürünlerini her cihazdan kullanmak için uzaktan kumanda",
+  "scripts": {
+    "start": "node sunucu.mjs",
+    "test": "node --test test/kumanda.test.mjs test/arayuz.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
