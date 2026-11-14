@@ -17,13 +17,13 @@ kısayolu + sunucuyu yeni kodla yeniden başlatma). Test geçmezse sunucuya doku
 
 | Ürün | Yer |
 |---|---|
-| Çalışan Kumanda | http://localhost:7777 (ürün sunucusu: 7778) |
+| Çalışan Kumanda | http://127.0.0.1:7777 (ürün sunucusu: 7778) |
 | Otomatik başlatma | Başlangıç klasöründe `Kumanda.lnk` |
 | Ayarlar, şifre özeti, günlük | `%LOCALAPPDATA%\Kumanda\` (`ayar.json`, `cihazlar.json`, `gunluk.txt`) |
 
 ## Nasıl denenir
 
-1. `http://localhost:7777` aç. İlk açılışta şifre belirlenir (yalnızca bu bilgisayardan).
+1. `http://127.0.0.1:7777` aç. İlk açılışta şifre belirlenir (yalnızca bu bilgisayardan).
 2. Bir proje seç → **Yeni sohbet** → istem yaz. Yanıt akar; izin gerekirse kart çıkar.
 3. **Ürünler** sekmesinden bir HTML'i aç ya da APK/EXE indir.
 4. Telefondan: `.\uzak-kur.ps1` çalıştır (Tailscale kurar, giriş ister), çıkan `https://…ts.net` adresini telefonda aç.

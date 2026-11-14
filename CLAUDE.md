@@ -10,7 +10,7 @@ ve arayüzün gerçek tarayıcıdaki görünümü henüz denenmedi. Ayrıntılar
 - Çalıştırma (ön planda, geliştirirken): `node sunucu.mjs`; arka planda: `node sunucu.mjs --arkaplan`
 - Durum / durdurma: `node sunucu.mjs --durum`, `node sunucu.mjs --durdur`
 - Test: `npm test` (gerçek sunucu süreci + `test/sahte-claude.mjs`; Claude kotası harcamaz, kendi geçici portlarını ve veri klasörünü kullanır)
-- Derleme: `DERLE.md` (tek komut: `.\derle.ps1`). Çıktı: çalışan sunucu, http://localhost:7777
+- Derleme: `DERLE.md` (tek komut: `.\derle.ps1`). Çıktı: çalışan sunucu, http://127.0.0.1:7777
 - Uzak erişim: `.\uzak-kur.ps1` (`-Herkese`, `-Kapat`)
 
 ## Düzen

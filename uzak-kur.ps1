@@ -32,7 +32,7 @@ if ($Kapat) {
 
 $kp, $up = (node $sunucu --portlar) -split ' '
 try { $durum = Invoke-RestMethod "http://127.0.0.1:$kp/api/durum" -TimeoutSec 3 } catch { throw 'Kumanda çalışmıyor. Önce .\kur.ps1 çalıştır.' }
-if (-not $durum.kurulu) { throw "Önce şifreni belirle: http://localhost:$kp  (şifresiz sistem dışarı açılmaz)" }
+if (-not $durum.kurulu) { throw "Önce şifreni belirle: http://127.0.0.1:$kp  (şifresiz sistem dışarı açılmaz)" }
 
 $t = & $ts status --json | ConvertFrom-Json
 if ($t.BackendState -ne 'Running') {

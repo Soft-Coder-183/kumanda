@@ -36,7 +36,9 @@ $k.Save()
 & $node $sunucu --durdur | Out-Null
 & $node $sunucu --arkaplan
 $port = ((& $node $sunucu --portlar) -split ' ')[0]
-$adres = "http://localhost:$port"
+# "localhost" değil 127.0.0.1: Windows PowerShell 5.1 localhost'u önce IPv6'da (::1) dener ve zaman aşımına düşer;
+# sunucu yalnızca 127.0.0.1'i dinler.
+$adres = "http://127.0.0.1:$port"
 $durum = $null
 foreach ($i in 1..40) {
   try { $durum = Invoke-RestMethod "$adres/api/durum" -TimeoutSec 2; break } catch { Start-Sleep -Milliseconds 250 }

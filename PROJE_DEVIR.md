@@ -132,6 +132,8 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
   doğrudan düzenleme aracıyla yapılır.
 - `node --test test/` Node 24'te klasörü modül sanıp hata verir; dosyalar adıyla verilir (`npm test` böyle).
 - `test/` altındaki her `.mjs` varsayılan test keşfine girer; `sahte-claude.mjs` test değildir, bu yüzden keşif kullanılmaz.
+- Betiklerde ve belgelerde adres `127.0.0.1` yazılır, `localhost` değil: Windows PowerShell 5.1 `localhost`'u önce IPv6'da dener ve
+  2 sn'lik zaman aşımına düşer; `kur.ps1` bu yüzden çalışan sunucuya "başlamadı" demişti (2026-11-14).
 - `fetch` `Host` başlığını değiştirtmez; yabancı `Host` testi `http.request` ile yapılır.
 - `ayar.json` yokken sunucu varsayılan portlarla (7777/7778) açılır: ikinci örnek başlatılırken ayar dosyası **önce** yazılmalı.
 - Arayüz dosyaları `no-cache` ile sunulur (ETag); arayüz değişikliği için sunucuyu yeniden başlatmak gerekmez, sunucu kodu için gerekir.

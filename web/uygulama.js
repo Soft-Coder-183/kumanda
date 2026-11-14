@@ -206,7 +206,7 @@ function girisGoster() {
   let icerik;
   if (kurulum && !durumBilgisi?.yerel) {
     icerik = h('p', {}, 'Kumanda henüz kurulmamış. Güvenlik için ilk şifre yalnızca bilgisayarın kendisinden belirlenebilir: bilgisayarında ',
-      h('b', {}, 'http://localhost:7777'), ' adresini aç.');
+      h('b', {}, 'http://127.0.0.1:7777'), ' adresini aç.');
   } else {
     icerik = h('form', { onsubmit: async e => {
       e.preventDefault();
