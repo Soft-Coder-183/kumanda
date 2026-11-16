@@ -8,9 +8,10 @@ tek dokunuşla verirsin. Claude senin bilgisayarında, senin dosyalarında, seni
 kumandadır.
 
 <p align="center">
-  <img src="belgeler/telefon-projeler.png" width="250" alt="Projeler listesi">
-  <img src="belgeler/telefon-izin.png" width="250" alt="Sohbet ve izin kartı">
-  <img src="belgeler/telefon-urunler.png" width="250" alt="Sohbetlere göre ayrılmış ürünler">
+  <img src="belgeler/telefon-projeler.png" width="190" alt="Projeler listesi">
+  <img src="belgeler/telefon-izin.png" width="190" alt="Sohbet ve izin kartı">
+  <img src="belgeler/telefon-urunler.png" width="190" alt="Bir projenin ürünleri, sohbetlere göre">
+  <img src="belgeler/telefon-tum-urunler.png" width="190" alt="Bütün ürünler: proje ve sohbet grupları, gizlenenler">
 </p>
 <p align="center"><img src="belgeler/masaustu-sohbet.png" width="780" alt="Masaüstünde koyu tema"></p>
 
@@ -31,8 +32,10 @@ kumandadır.
   sohbet sürerken de değişir.
 - **Resim gönder.** Ekran görüntüsünü ya da fotoğrafı isteme ekle; telefonda küçültülüp gönderilir.
 - **Ürünler, onları üreten sohbete göre.** Her projenin Ürünler sekmesinde dosyalar, onları son değiştiren sohbetin başlığı altında
-  durur. Web sayfası, video ve PDF tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir,
-  eski sürümler ve kopyalar "Diğer dosyalar" altına iner.
+  durur; üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF
+  tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir, eski sürümler ve kopyalar
+  "Diğer dosyalar" altına iner. **Gizle** dediğin dosya silinmez: aynı sohbetin altındaki "Gizlediklerin" kutusuna geçer,
+  **Göster** ile geri gelir.
 - **Bildirim.** Sayfa kapalıyken Claude işini bitirince ya da izin beklerken telefonuna bildirim gelir (cihaz başına açılır).
 - **Koptuğunda iş durmaz.** Telefonun uykuya geçse de Claude çalışmaya devam eder; geri döndüğünde kaldığı yerden görürsün.
 - **Açık ve koyu tema, telefona uygun düzen, ana ekrana eklenebilir (PWA).**

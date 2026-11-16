@@ -159,8 +159,7 @@ function urunEylemi(u) {
 
 const sohbetAdi = o => o?.baslik || 'Başlıksız sohbet';
 
-/** oturumlar verilirse kartta ürünü üreten sohbetin bağı da görünür (bütün ürünler sayfası). */
-function urunKarti(pid, u, yenile, oturumlar = null) {
+function urunKarti(pid, u, yenile) {
   const e = urunEylemi(u);
   const adres = `/ac?p=${pid}&y=${encodeURIComponent(u.yol)}${e.indir ? '&indir=1' : ''}`;
   const klasor = u.yol.includes('/') ? u.yol.slice(0, u.yol.lastIndexOf('/')) : '';
@@ -169,8 +168,7 @@ function urunKarti(pid, u, yenile, oturumlar = null) {
       h('div', { class: 'tur' }, turAdi(u)),
       h('div', { style: 'min-width:0' },
         h('div', { class: 'ad' }, u.baslik || u.ad),
-        h('div', { class: 'yol' }, u.baslik ? u.yol : (klasor || 'proje kökü')),
-        oturumlar && u.oturum && h('a', { class: 'urun-sohbet', href: `#/p/${pid}/s/${u.oturum}` }, `Sohbet: ${sohbetAdi(oturumlar[u.oturum])}`))),
+        h('div', { class: 'yol' }, u.baslik ? u.yol : (klasor || 'proje kökü')))),
     h('div', { class: 'alt' },
       h('span', { class: 'rozet' }, boyutYaz(u.boyut)),
       h('span', { class: 'rozet' }, goreliZaman(u.zaman)),
@@ -183,15 +181,17 @@ function urunKarti(pid, u, yenile, oturumlar = null) {
       h('a', { class: `dugme kucuk${e.uyumlu ? ' ana' : ''}`, href: adres, target: '_blank', rel: 'noopener' }, e.ad)));
 }
 
-function urunIzgarasi(pid, urunler, yenile, oturumlar = null) {
+function urunIzgarasi(pid, urunler, yenile) {
   const asil = urunler.filter(u => !u.ikincil && !u.gizli);
-  const diger = urunler.filter(u => u.ikincil || u.gizli);
+  const ikincil = urunler.filter(u => u.ikincil && !u.gizli);
+  const gizli = urunler.filter(u => u.gizli);
+  const kutu = (ozet, liste, sinif) => liste.length ? h('details', { class: `diger ${sinif}` },
+    h('summary', {}, ozet), h('div', { class: 'urunler' }, liste.map(u => urunKarti(pid, u, yenile)))) : null;
   // Her zaman yalnızca DOM öğelerinden oluşan bir dizi döner (replaceChildren'e yayılarak verilir).
   return [
-    asil.length ? h('div', { class: 'urunler' }, asil.map(u => urunKarti(pid, u, yenile, oturumlar))) : null,
-    diger.length ? h('details', { class: 'diger' },
-      h('summary', {}, `Diğer dosyalar (${diger.length}): kopyalar, eski sürümler, kaynak dosyaları, gizlenenler`),
-      h('div', { class: 'urunler' }, diger.map(u => urunKarti(pid, u, yenile, oturumlar)))) : null,
+    asil.length ? h('div', { class: 'urunler' }, asil.map(u => urunKarti(pid, u, yenile))) : null,
+    kutu(`Diğer dosyalar (${ikincil.length}): kopyalar, eski sürümler, kaynak dosyaları`, ikincil, 'ikincil'),
+    kutu(`Gizlediklerin (${gizli.length}): "Göster" ile geri gelir`, gizli, 'gizlenen'),
   ].filter(Boolean);
 }
 
@@ -367,12 +367,13 @@ function tumUrunler() {
   let iptal = false;
   async function yukle() {
     try {
-      const v = await api('/api/urunler');
+      const v = await api('/api/urunler?gizliler');
       if (iptal) return;
-      govde.replaceChildren(...(v.gruplar.length ? v.gruplar.flatMap(g => [
-        h('h2', {}, h('a', { href: `#/p/${g.proje.kimlik}/urunler`, style: 'color:inherit;text-decoration:none' }, g.proje.ad)),
-        ...urunIzgarasi(g.proje.kimlik, g.urunler, yukle, g.oturumlar || {}),
-      ]) : [h('div', { class: 'bos-durum' }, 'Hiçbir projede ürün bulunamadı.')]));
+      // Proje başlığı altında, projenin Ürünler sekmesindeki gibi sohbetlere ayrılmış.
+      govde.replaceChildren(...(v.gruplar.length ? v.gruplar.map(g => h('section', { class: 'proje-grubu' },
+        h('h2', {}, h('a', { href: `#/p/${g.proje.kimlik}/urunler`, style: 'color:inherit;text-decoration:none' }, `${g.proje.ad} ›`)),
+        oturumGruplari(g.proje.kimlik, g.urunler, g.oturumlar || {}, yukle)))
+        : [h('div', { class: 'bos-durum' }, 'Hiçbir projede ürün bulunamadı.')]));
     } catch (x) { if (!iptal && x.kod !== 401) govde.replaceChildren(h('div', { class: 'bos-durum' }, x.message)); }
   }
   yukle();

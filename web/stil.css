@@ -100,7 +100,11 @@ h2:first-child { margin-top: 0; }
 .oturum-bas { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; text-decoration: none; color: inherit; }
 .oturum-bas .ad { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }
 a.oturum-bas:hover .ad { color: var(--vurgu); }
-.urun-sohbet { display: block; font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; text-decoration: none; }
+/* bütün ürünler: proje başlığı → sohbet grupları (sohbetler projenin altında, solda çizgiyle) */
+.proje-grubu + .proje-grubu { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--cizgi); }
+.proje-grubu > h2 { font-size: 19px; margin: 0 0 12px; }
+.proje-grubu .oturum-grubu { padding-left: 12px; border-left: 3px solid var(--vurgu-soluk); }
+details.gizlenen > summary { color: var(--soluk); }
 .sohbet-urunleri { border-bottom: 1px solid var(--cizgi); background: var(--yuzey2); }
 .sohbet-urunleri > summary { cursor: pointer; padding: 8px 16px; font-size: 13.5px; font-weight: 600; max-width: 860px; margin: 0 auto; }
 .sohbet-urunleri-ic { padding: 0 14px 12px; max-width: 860px; margin: 0 auto; max-height: 45dvh; overflow-y: auto; }

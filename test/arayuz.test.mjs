@@ -133,7 +133,12 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.ok(baglar.some(e => e.href === `/ac?p=${PID}&y=${encodeURIComponent('dist/a-1.0.apk')}&indir=1`));
   await hepsineBas(bas);
   await git('#/urunler');
-  assert.ok(metinler(kok).includes('Sohbet: APK derleme sohbeti'), 'bütün ürünler sayfasında kartta sohbet bağı');
+  const tumu = metinler(kok);
+  assert.ok(tumu.includes('Alfa ›') && tumu.includes('APK derleme sohbeti') && tumu.includes('Bir sohbete bağlanamayanlar'),
+    'bütün ürünler sayfası da proje → sohbet diye ayrılır');
+  assert.ok(istekler.some(i => i.yol === '/api/urunler?gizliler'), 'gizlenenler de istenir');
+  assert.ok(tumu.some(m => m.startsWith('Gizlediklerin (1)')), 'gizlenen ürün kendi kutusunda');
+  assert.ok(tumu.some(m => m.startsWith('Diğer dosyalar (1)')), 'eski sürüm gizlenenlerle karışmaz');
   await git('#/ayarlar');
   await bekle(50);
   assert.ok(metinler(kok).includes('Windows · Edge'));

@@ -342,6 +342,14 @@ test('ürünler, onları değiştiren sohbete bağlanır (alt ajanlar dahil, tra
   const genel = (await iste('/api/urunler')).j.gruplar.find(g => g.proje.kimlik === alfa);
   assert.equal(genel.urunler.find(u => u.yol === 'site/index.html').oturum, S2);
   assert.equal(genel.oturumlar[S2].baslik, 'siteyi kur');
+
+  // Gizlenen ürün bütün ürünler listesinden düşer, ?gizliler ile "gizli" işaretli geri gelir.
+  await iste(`/api/proje/${alfa}/urun-gizle`, { govde: { yol: 'site/index.html', gizli: true } });
+  const bul = async ek => (await iste(`/api/urunler${ek}`)).j.gruplar.find(g => g.proje.kimlik === alfa).urunler.find(u => u.yol === 'site/index.html');
+  assert.equal(await bul(''), undefined);
+  assert.equal((await bul('?gizliler')).gizli, true);
+  await iste(`/api/proje/${alfa}/urun-gizle`, { govde: { yol: 'site/index.html', gizli: false } });
+  assert.ok(await bul(''), 'yeniden gösterilince listede');
 });
 
 test('çıkış: kumanda ve ürün çerezleri birlikte geçersizleşir', async () => {

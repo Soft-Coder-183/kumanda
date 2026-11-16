@@ -3,7 +3,7 @@
 Eren'in bilgisayarındaki Claude Code'u ve bütün projelerinin ürünlerini (HTML, APK, EXE, ZIP, video, belge) telefondan ya da başka
 bir bilgisayardan kullanmasını sağlayan yerel sunucu + web arayüzü. Bağımlılıksız Node.js (22+), derleme adımı yok. Sunucu yalnızca
 `127.0.0.1`'i dinler; uzaktan erişim Tailscale yönlendirmesiyle gelir (kurulu, yalnızca kendi ağ). Herkese açık depo (MIT):
-https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.0 (2026-11-16); gerçek telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
+https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.1 (2026-11-16); gerçek telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
 
 ## Komutlar
 - Kurulum / yeniden başlatma: `.\kur.ps1` (otomatik başlatma kısayolu + sunucuyu yeni kodla başlatır)

@@ -197,11 +197,12 @@ api.ekle('GET', '/api/projeler', async ({ res, url }) => {
   json(res, 200, { projeler: liste });
 });
 
-api.ekle('GET', '/api/urunler', async ({ res }) => {
+api.ekle('GET', '/api/urunler', async ({ res, url }) => {
   const projeler = await projeleriListele();
+  const gizliler = url.searchParams.has('gizliler'); // gizlenen ürünler de (gizli: true ile) gelsin
   const gruplar = [];
   for (const p of projeler) {
-    const urunler = await urunleriListele(p);
+    const urunler = await urunleriListele(p, { gizliler });
     if (urunler.length) gruplar.push({ proje: projeOzeti(p), urunler, oturumlar: await urunleriOturumlaraBagla(p, urunler) });
   }
   json(res, 200, { gruplar });

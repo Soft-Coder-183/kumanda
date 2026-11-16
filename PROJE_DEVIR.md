@@ -6,7 +6,7 @@ bir ajanın önceki konuşmaları görmeden işe başlayabilmesi için yazıldı
 - **Sahibi:** Eren (Türkçe konuşur). Kendi kullanımı için; depo herkese açık (MIT).
 - **Depo:** https://github.com/Soft-Coder-183/kumanda (herkese açık, 2026-11-16). Sürümler GitHub'da etiket + yayın olarak;
   derlenecek bir şey olmadığı için yayına dosya eklenmez (kaynak zip'i yeterli).
-- **Durum:** 1.1.0 yayımlandı (2026-11-16). Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Arayüz başsız
+- **Durum:** 1.1.1 yayımlandı (2026-11-16). Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Arayüz başsız
   Chrome'da denendi. Tailscale yönlendirmesi kurulu (yalnızca kendi ağ), https adresi bu bilgisayardan denendi.
   **Ajan tarafından denenmedi:** gerçek telefondan kullanım, telefonda bildirim. Bkz. Açık işler.
 - **Devam eden iş:** yok.
@@ -80,8 +80,12 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
   (93 MB'lık transkriptle ilk tarama ~0,3 sn, sonrakiler ~10 ms).
 - Uçlar: `GET /api/proje/:pid/urunler` → `{ urunler (her biri .oturum), oturumlar: { kimlik: { baslik, zaman } } }`, `?oturum=<kimlik>`
   yalnızca o sohbetin ürünleri; `/api/urunler` her gruba `oturumlar` ekler.
-- Arayüz: proje → Ürünler sekmesi sohbet başlıklarına göre gruplu (en son ürün çıkaran üstte); sohbet ekranının üstünde katlanır
-  "Bu sohbetin ürünleri" (ürün yoksa gizli, tur bitince 1,5 sn sonra yeniden taranır); bütün ürünler sayfasında kartta sohbet bağı.
+- Arayüz (`oturumGruplari`): proje → Ürünler sekmesi ve üstteki bütün ürünler sayfası (`tumUrunler`, proje başlığı → sohbet
+  grupları) aynı gruplamayı kullanır; en son ürün çıkaran sohbet üstte. Sohbet ekranının üstünde katlanır "Bu sohbetin ürünleri"
+  (ürün yoksa gizli, tur bitince 1,5 sn sonra yeniden taranır; gizlenenleri göstermez).
+- **Gizleme** (`ayar.gizliUrunler`, dosya silinmez): her grupta üç parça: asıl ürünler, "Diğer dosyalar" (ikincil), "Gizlediklerin"
+  (Göster ile geri). Bu yüzden iki liste sayfası da `?gizliler` ile ister (`/api/urunler?gizliler` 1.1.1'de eklendi; önceden bütün
+  ürünler sayfasında gizlenen ürün tamamen kayboluyordu).
 
 ### Ürün sunumu
 - Arayüzdeki bağ `/ac?p=<proje>&y=<yol>` (kumanda kökeni) → tek kullanımlık, 60 sn'lik bilet → ürün kökeninde `/_ac` kendi çerezini

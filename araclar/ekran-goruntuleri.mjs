@@ -124,11 +124,23 @@ try {
   await cek('telefon-izin');
   await s.click('.izin >> text=İzin ver');
   await s.waitForSelector('text=Komut çalıştı.');
+  const sohbetAdresi = s.url();
+
+  // Bütün ürünler: proje → sohbet grupları; bir ürün gizlenir ve "Gizlediklerin" kutusuna geçer.
+  await s.goto(`${K}/#/urunler`);
+  await s.waitForSelector('.proje-grubu');
+  await s.locator('.urun', { hasText: 'HavaDurumu-kurulum.exe' }).getByText('Gizle', { exact: true }).click();
+  await s.waitForSelector('details.gizlenen');
+  await s.click('details.gizlenen > summary');
+  await bekle(300);
+  await cek('telefon-tum-urunler');
+  await s.locator('.urun', { hasText: 'HavaDurumu-kurulum.exe' }).getByText('Göster', { exact: true }).click();
+  await s.waitForSelector('details.gizlenen', { state: 'detached' });
 
   const masaustu = await tarayici.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark', locale: 'tr-TR', storageState: await telefon.storageState() });
   const m = await masaustu.newPage();
   m.on('pageerror', e => hatalar.push(e.message));
-  await m.goto(s.url());
+  await m.goto(sohbetAdresi);
   await m.waitForSelector('table');
   await bekle(500);
   const yol = path.join(CIKTI, 'masaustu-sohbet.png'); await m.screenshot({ path: yol }); kaydedilen.push(yol);
