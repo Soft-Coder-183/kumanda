@@ -2,8 +2,8 @@
 
 Eren'in bilgisayarındaki Claude Code'u ve bütün projelerinin ürünlerini (HTML, APK, EXE, ZIP, video, belge) telefondan ya da başka
 bir bilgisayardan kullanmasını sağlayan yerel sunucu + web arayüzü. Bağımlılıksız Node.js (22+), derleme adımı yok. Sunucu yalnızca
-`127.0.0.1`'i dinler; uzaktan erişim Tailscale yönlendirmesiyle gelir. Durum: 1.0.0 (2026-11-13), yerel kullanım denendi, uzak erişim
-ve arayüzün gerçek tarayıcıdaki görünümü henüz denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
+`127.0.0.1`'i dinler; uzaktan erişim Tailscale yönlendirmesiyle gelir (kurulu, yalnızca kendi ağ). Durum: 1.0.0 + yayımlanmamış
+değişiklikler (`notlar/v1.1.0.md`), 2026-11-16; arayüzün gerçek tarayıcıdaki görünümü ve telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
 
 ## Komutlar
 - Kurulum / yeniden başlatma: `.\kur.ps1` (otomatik başlatma kısayolu + sunucuyu yeni kodla başlatır)

@@ -357,6 +357,7 @@ function tumUrunler() {
 // ───────── sohbet ─────────
 const MOD_ADI = { default: 'Her şeyi sor', acceptEdits: 'Düzenlemelere izin', auto: 'Otomatik', plan: 'Plan modu', bypassPermissions: 'Hepsine izin (riskli)' };
 const MODEL_ADI = { '': 'Varsayılan model', fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
+const EFOR_ADI = { '': 'Varsayılan effort', low: 'Effort: düşük', medium: 'Effort: orta', high: 'Effort: yüksek', xhigh: 'Effort: çok yüksek', max: 'Effort: en yüksek' };
 
 function aracOzeti(ad, g = {}) {
   const dosya = y => String(y || '').split(/[\\/]/).pop();
@@ -407,6 +408,7 @@ function sohbetGorunumu(pid, sid) {
   const araclar = new Map(), izinler = new Map(), ekler = [];
   let mod = localStorage.getItem('kumanda.mod') || 'acceptEdits';
   let model = localStorage.getItem('kumanda.model') || '';
+  let efor = localStorage.getItem('kumanda.efor') || '';
 
   const baslikEl = h('h1', {}, sid ? 'Sohbet' : 'Yeni sohbet');
   const akisEl = h('div', { class: 'sohbet' });
@@ -417,15 +419,17 @@ function sohbetGorunumu(pid, sid) {
   const dosyaGirdi = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
   const modSec = h('select', { 'aria-label': 'İzin modu' }, Object.entries(MOD_ADI).map(([d, a]) => h('option', { value: d }, a)));
   const modelSec = h('select', { 'aria-label': 'Model' }, Object.entries(MODEL_ADI).map(([d, a]) => h('option', { value: d }, a)));
+  const eforSec = h('select', { 'aria-label': 'Effort (düşünme derinliği)', title: 'Effort: düşük = hızlı ve az kota, en yüksek = en derin ve en çok kota' },
+    Object.entries(EFOR_ADI).map(([d, a]) => h('option', { value: d }, a)));
   const durdurDugme = h('button', { class: 'dugme kucuk tehlike', type: 'button', hidden: true, onclick: () => api(`/api/oturum/${sid}/kes`, {}).catch(x => bildir(x.message)) }, 'Durdur');
   const gonderDugme = h('button', { class: 'dugme ana kucuk', type: 'submit' }, 'Gönder');
-  modSec.value = mod; modelSec.value = model;
+  modSec.value = mod; modelSec.value = model; eforSec.value = efor;
 
   const form = h('form', { class: 'yazma', onsubmit: e => { e.preventDefault(); gonder(); } },
     h('div', { class: 'yazma-ic' }, eklerEl, alan,
       h('div', { class: 'yazma-alt' },
         h('button', { class: 'dugme duz kucuk', type: 'button', title: 'Resim ekle', 'aria-label': 'Resim ekle', onclick: () => dosyaGirdi.click() }, '＋'),
-        dosyaGirdi, modSec, modelSec, h('span', { class: 'bos' }), durdurDugme, gonderDugme)));
+        dosyaGirdi, modSec, modelSec, eforSec, h('span', { class: 'bos' }), durdurDugme, gonderDugme)));
 
   ana.replaceChildren(ustCubuk({ baslik: baslikEl, alt: projeAdi(pid), geri: `#/p/${pid}` }), kaydirEl, durumEl, form);
 
@@ -559,6 +563,8 @@ function sohbetGorunumu(pid, sid) {
     const sag = [canli?.model?.replace(/^claude-/, ''), l?.bes != null ? `5 sa %${Math.round(l.bes * 100)}` : null, l?.yedi != null ? `hafta %${Math.round(l.yedi * 100)}` : null].filter(Boolean).join(' · ');
     durumEl.replaceChildren(d && d !== 'kapali' ? h('span', { class: `nokta ${d}` }) : '', h('span', {}, sol), h('span', { class: 'bos' }), h('span', {}, sag));
     if (canli?.mod && d !== 'kapali' && modSec.value !== canli.mod) modSec.value = canli.mod;
+    // Başka bir cihazdan değiştirildiyse göster (yalnızca açık süreçte; kapalıysa sıradaki istem bu cihazın seçimiyle açılır).
+    if (canli && d !== 'kapali' && typeof canli.efor === 'string' && eforSec.value !== canli.efor) eforSec.value = canli.efor;
   }
 
   // ── akış ──
@@ -622,7 +628,7 @@ function sohbetGorunumu(pid, sid) {
     if (!metin && !ekler.length) return;
     gonderDugme.disabled = true;
     try {
-      const r = await api(`/api/proje/${pid}/gonder`, { oturum: sid, metin, resimler: ekler.map(e => ({ tur: e.tur, veri: e.veri })), mod, model });
+      const r = await api(`/api/proje/${pid}/gonder`, { oturum: sid, metin, resimler: ekler.map(e => ({ tur: e.tur, veri: e.veri })), mod, model, efor: eforSec.value });
       alan.value = ''; ekler.length = 0; ekleriCiz(); boyutla();
       if (!sid) { sid = r.oturum; history.replaceState(null, '', `#/p/${pid}/s/${sid}`); baslikEl.textContent = metin.slice(0, 60) || 'Sohbet'; }
       if (r.nesil !== canli?.nesil) { akisKapat(); isaret = ''; }
@@ -660,6 +666,13 @@ function sohbetGorunumu(pid, sid) {
   modelSec.addEventListener('change', async () => {
     model = modelSec.value; localStorage.setItem('kumanda.model', model);
     if (sid && canli && canli.durum !== 'kapali') { try { await api(`/api/oturum/${sid}/mod`, { model }); } catch (x) { bildir(x.message); } }
+  });
+  eforSec.addEventListener('change', async () => {
+    efor = eforSec.value; localStorage.setItem('kumanda.efor', efor);
+    if (sid && canli && canli.durum !== 'kapali') {
+      try { await api(`/api/oturum/${sid}/mod`, { efor }); bildir(canli.durum === 'calisiyor' ? 'Effort sıradaki adımdan itibaren geçerli' : 'Effort değişti'); }
+      catch (x) { bildir(x.message); eforSec.value = canli.efor ?? ''; }
+    }
   });
 
   // Sekme gizlenince akışı bırak: sunucu "izleyen yok" bilir ve telefona bildirim yollar. Dönünce kaldığı yerden sürer.

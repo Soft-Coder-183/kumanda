@@ -5,8 +5,10 @@ bir ajanın önceki konuşmaları görmeden işe başlayabilmesi için yazıldı
 
 - **Sahibi:** Eren (Türkçe konuşur). Kişisel kullanım; ürün paylaşılmıyor.
 - **Depo:** yalnızca yerel git deposu (uzak depo yok).
-- **Durum:** 1.0.0 (2026-11-13). Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. **Henüz denenmedi:** arayüzün
-  gerçek tarayıcıdaki görünümü, Tailscale ile uzak erişim, telefonda bildirim. Bkz. Açık işler.
+- **Durum:** 1.0.0 yayımlandı (2026-11-13); yayımlanmamış değişiklikler `notlar/v1.1.0.md`'de (effort seçimi, WMI ile arka plan).
+  Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Tailscale yönlendirmesi kurulu (yalnızca kendi ağ, 2026-11-16),
+  https adresi bu bilgisayardan denendi. **Ajan tarafından denenmedi:** arayüzün gerçek tarayıcıdaki görünümü, telefondan kullanım,
+  telefonda bildirim. Bkz. Açık işler.
 - **Devam eden iş:** yok.
 - **Kapsam notu:** Bu belge her parçayı saymaz. Kodda burada anlatılmayan bir bölüm görürsen değiştirmeden önce kullanıcıya sor.
 
@@ -106,7 +108,12 @@ kullanmaz); bütün ürünler tek kökeni, dolayısıyla `localStorage`'ı payla
   `.claude/settings.local.json` dosyasına kural yazar).
 - `AskUserQuestion` de `can_use_tool` olarak gelir; yanıt `updatedInput.answers = { "<soru metni>": "<etiket>" }`.
 - Bizden giden kontrol istekleri: `interrupt`, `set_permission_mode` (`mode`: `default`/`acceptEdits`/`auto`/`plan`/`bypassPermissions`),
-  `set_model`. CLI bayrağında `default`'un adı `manual`'dır.
+  `set_model`, `apply_flag_settings` (effort için `settings: { effortLevel }`). CLI bayrağında `default`'un adı `manual`'dır.
+- **Effort (2026-11-16'da gerçek istekle doğrulandı):** süreç açılırken `--effort`, çalışırken
+  `apply_flag_settings { effortLevel: X }`; ikisi de kullanıcının `settings.json`'daki model başına `modelSettings.*.effortLevel`
+  ayarını ezer, `effortLevel: null` kullanıcının ayarına döndürür. `set_effort` diye bir istek yok (`unsupported_request`).
+  `get_settings`'in "effective" alanı bayrak katmanını güvenilir göstermez; doğrulama transkriptteki `api-request` satırının
+  `params.output_config.effort` alanından yapılır.
 - `--include-partial-messages` ile her içerik bloğu ayrı `assistant` satırı olarak, metin parçaları `stream_event` olarak gelir.
 - Yeni oturumda `--session-id <uuid>` ile kimliği biz veririz; `--resume` aynı kimliği ve aynı transkript dosyasını sürdürür.
 - Kısa (8.3) yol içeren çalışma klasöründe (`ERENAK~1`) Claude Code yazmayı "şüpheli yol" diye reddeder; projeler uzun yolla tutulur.
@@ -115,8 +122,12 @@ kullanmaz); bütün ürünler tek kökeni, dolayısıyla `localStorage`'ı payla
 ## Derleme ve deneme
 
 - **Derleme hattı:** yok; `derle.ps1` denetim + test + `kur.ps1`. Komutlar `DERLE.md`'de.
-- **Deneme düzeni:** `npm test` geçici klasörde gerçek sunucuyu başlatır (`KUMANDA_VERI`, `KUMANDA_CLAUDE_DIZIN`, `KUMANDA_CLAUDE`
-  ortam değişkenleriyle), sahte Claude kullanır. `arayuz.test.mjs` arayüzü sahte DOM'da çalıştırır: çalışma zamanı hatalarını yakalar,
+- **Arka plan başlatma:** `--arkaplan` Windows'ta sunucuyu WMI (`Win32_Process.Create`, gizli pencere) ile `--gunluk` bayrağıyla
+  başlatır: süreç başlatan terminalin/VS Code'un/Claude Code'un iş nesnesine girmez, onlar kapanınca ölmez; üst süreci `WmiPrvSE.exe`.
+  WMI çıktı yönlendiremez, bu yüzden `--gunluk` kipi `console.*`'ı günlük dosyasına yazar. WMI ile açılan süreç çağıranın ortam
+  değişkenlerini **devralmaz**: testler `KUMANDA_DOGRUDAN=1` ile eski (doğrudan `spawn`) yolu kullanır.
+- **Deneme düzeni:** `npm test` geçici klasörde gerçek sunucuyu başlatır (`KUMANDA_VERI`, `KUMANDA_CLAUDE_DIZIN`, `KUMANDA_CLAUDE`,
+  `KUMANDA_DOGRUDAN` ortam değişkenleriyle), sahte Claude kullanır. `arayuz.test.mjs` arayüzü sahte DOM'da çalıştırır: çalışma zamanı hatalarını yakalar,
   görünümü doğrulamaz.
 - **Gerçek Claude ile deneme:** ayrı veri klasörü ve portla ikinci bir örnek başlatılır (`KUMANDA_VERI=<geçici>`, `ayar.json`'da başka
   portlar) ve `haiku` ile denenir; kurulu örneğe ve kullanıcının şifresine dokunulmaz.
@@ -144,8 +155,9 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
 
 - **Arayüz gerçek tarayıcıda denenmedi** (2026-11-13): Chrome eklentisi bağlı değildi. Yerleşim, taşmalar, telefon klavyesi davranışı,
   karanlık tema gözle denetlenmeli.
-- **Uzak erişim denenmedi:** `uzak-kur.ps1` Tailscale kurulu olmadığı için çalıştırılmadı (`serve --bg --https=…` sözdizimi, HTTPS
-  sertifikası etkinleştirme adımı, `X-Forwarded-*` başlıkları doğrulanmalı).
+- **Uzak erişim telefondan denenmedi** (ajan tarafından): `uzak-kur.ps1` kullanıcı tarafından çalıştırıldı (2026-11-16), `serve`
+  kuralları doğru (443 → 7777, 8443 → 7778, yalnızca kendi ağ); https adresi bu bilgisayardan yanıt veriyor ve vekil başlıkları
+  algılanıyor (`yerel: false`). Telefonda giriş, ürün açma ve `Secure` çerez akışı gözle denenmeli.
 - **Bildirim uçtan uca denenmedi:** abonelik https ya da localhost ister; VAPID imzası ve servis çalışanı gerçek cihazda denenmeli.
   `ayar.bildirimIletisim` yer tutucudur; Apple itme servisi geçerli bir `mailto:` isteyebilir.
 - Aynı oturum hem terminalde hem Kumanda'da aynı anda açılırsa iki süreç aynı transkripte yazar; uyarı yok.

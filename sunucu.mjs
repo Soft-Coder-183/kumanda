@@ -7,12 +7,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { ayar, ayarIzle, ayarKaydet, ayarYukle, atomikYaz, KOK, VERI } from './src/ayar.mjs';
 import { HttpHata, Yonlendirici, cerezler, cerezYaz, dosyaGonder, duzMetin, istekBilgisi, json, jsonOku, yonlendir } from './src/http.mjs';
 import * as kimlik from './src/kimlik.mjs';
 import { guvenliYol, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele } from './src/projeler.mjs';
-import { MODELLER, MODLAR, bildirimciAyarla, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi } from './src/oturumlar.mjs';
+import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi } from './src/oturumlar.mjs';
 import * as bildirim from './src/bildirim.mjs';
 
 const SURUM = JSON.parse(fs.readFileSync(path.join(KOK, 'package.json'), 'utf8')).version;
@@ -23,11 +23,25 @@ const yerelAdres = () => `http://127.0.0.1:${ayar.kumandaPort}`;
 // ───────────── komut satırı ─────────────
 const bayrak = process.argv[2];
 
+const GUNLUK = path.join(VERI, 'gunluk.txt');
+
 function arkaplandaBaslat() {
-  // Penceresiz, bu terminalden bağımsız bir kopya başlat (oturum açılışındaki kısayol bunu kullanır).
-  const gunluk = path.join(VERI, 'gunluk.txt');
-  try { if (fs.statSync(gunluk).size > 2e6) fs.renameSync(gunluk, gunluk + '.eski'); } catch { /* yok */ }
-  const cikti = fs.openSync(gunluk, 'a');
+  // Penceresiz, başlatandan bağımsız bir kopya (oturum açılışındaki kısayol da bunu kullanır).
+  try { if (fs.statSync(GUNLUK).size > 2e6) fs.renameSync(GUNLUK, GUNLUK + '.eski'); } catch { /* yok */ }
+  if (process.platform === 'win32' && !process.env.KUMANDA_DOGRUDAN) {
+    // Windows'ta WMI ile başlat: süreç başlatan terminalin, VS Code'un ya da Claude Code'un iş nesnesine (job) girmez,
+    // onlar kapanınca birlikte ölmez. WMI çıktı yönlendirmesi yapamadığı için sunucu günlüğü kendisi yazar (--gunluk).
+    const tirnak = s => `"${s}"`;
+    const satir = [process.execPath, import.meta.filename].map(tirnak).join(' ') + ' --gunluk';
+    const ps = `$b = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; `
+      + `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:KUMANDA_SATIR; CurrentDirectory=$env:KUMANDA_KOK; ProcessStartupInformation=$b}; `
+      + 'exit $r.ReturnValue';
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps],
+      { env: { ...process.env, KUMANDA_SATIR: satir, KUMANDA_KOK: KOK }, windowsHide: true, encoding: 'utf8' });
+    if (r.status === 0) return;
+    console.error(`WMI ile başlatılamadı (${r.status ?? r.error?.message}); doğrudan başlatılıyor.`);
+  }
+  const cikti = fs.openSync(GUNLUK, 'a');
   spawn(process.execPath, [import.meta.filename], { detached: true, windowsHide: true, stdio: ['ignore', cikti, cikti], cwd: KOK }).unref();
 }
 const calisiyorMu = async () => { try { await fetch(`${yerelAdres()}/api/durum`, { signal: AbortSignal.timeout(1500) }); return true; } catch { return false; } };
@@ -45,6 +59,12 @@ async function durdur() {
 if (bayrak === '--arkaplan') {
   arkaplandaBaslat();
   process.exit(0);
+} else if (bayrak === '--gunluk') {
+  // WMI ile başlatılan kopya: konsolu yok, çıktısını günlük dosyasına kendisi yazar.
+  const akis = fs.createWriteStream(GUNLUK, { flags: 'a' });
+  const yaz = (...a) => akis.write(a.map(x => (typeof x === 'string' ? x : x instanceof Error ? x.stack : JSON.stringify(x))).join(' ') + '\n');
+  console.log = console.error = console.warn = yaz;
+  process.on('uncaughtException', e => { yaz(new Date().toISOString(), 'Beklenmeyen hata:', e); akis.end(() => process.exit(1)); });
 } else if (bayrak === '--durdur') {
   try { console.log((await durdur()) ? 'Kumanda durduruldu.' : 'Kumanda çalışmıyor.'); }
   catch (e) { console.log(e.message); process.exitCode = 1; }
@@ -249,8 +269,9 @@ api.ekle('POST', '/api/proje/:pid/gonder', async ({ req, res, p }) => {
   if (g.oturum != null && !/^[0-9a-f-]{36}$/i.test(g.oturum)) throw new HttpHata(400, 'Geçersiz oturum');
   if (g.mod != null && !MODLAR.includes(g.mod)) throw new HttpHata(400, 'Geçersiz mod');
   if (g.model != null && !MODELLER.includes(g.model)) throw new HttpHata(400, 'Geçersiz model');
+  if (g.efor != null && !EFORLAR.includes(g.efor)) throw new HttpHata(400, 'Geçersiz effort');
   let k;
-  try { k = await gonder(proje, { oturum: g.oturum || null, metin, resimler, mod: g.mod, model: g.model }); }
+  try { k = await gonder(proje, { oturum: g.oturum || null, metin, resimler, mod: g.mod, model: g.model, efor: g.efor }); }
   catch (e) { throw new HttpHata(e.message === 'Oturum bulunamadı' ? 404 : 500, e.message); }
   json(res, 200, { oturum: k.oturum, nesil: k.nesil });
 });
@@ -280,6 +301,7 @@ api.ekle('POST', '/api/oturum/:sid/mod', async ({ req, res, p }) => {
   try {
     if (g.mod != null) await k.modAyarla(g.mod);
     if (g.model != null) await k.modelAyarla(g.model);
+    if (g.efor != null) await k.eforAyarla(g.efor);
   } catch (e) { throw new HttpHata(400, e.message); }
   json(res, 200, k.anlik());
 });

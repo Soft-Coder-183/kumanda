@@ -11,6 +11,7 @@ import { kayitDizini, oturumDosyasi, kullaniciMetni } from './projeler.mjs';
 
 export const MODLAR = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'];
 export const MODELLER = ['', 'fable', 'opus', 'sonnet', 'haiku'];
+export const EFORLAR = ['', 'low', 'medium', 'high', 'xhigh', 'max']; // '' = kullanıcının Claude Code ayarı
 const MOD_BAYRAGI = { default: 'manual' }; // CLI bayrağında "default"un adı "manual"
 
 const kisalt = (s, n) => (s.length > n ? `${s.slice(0, n)}… (+${s.length - n} karakter)` : s);
@@ -97,12 +98,13 @@ let bildirimci = () => {};
 export function bildirimciAyarla(f) { bildirimci = f; }
 
 class Kosu {
-  constructor(proje, oturum, { devam, mod, model, sinir }) {
+  constructor(proje, oturum, { devam, mod, model, efor, sinir }) {
     this.proje = proje;
     this.oturum = oturum;
     this.nesil = crypto.randomBytes(4).toString('hex');
     this.mod = MODLAR.includes(mod) ? mod : 'acceptEdits';
     this.istenenModel = MODELLER.includes(model) ? model : '';
+    this.efor = EFORLAR.includes(efor) ? efor : '';
     this.model = null;
     this.gecmisSinir = sinir;   // transkriptin bu bayta kadarki kısmı "geçmiş"; sonrası aşağıdaki olay günlüğünde
     this.olaylar = [];
@@ -130,7 +132,7 @@ class Kosu {
   }
 
   anlik() {
-    return { t: 'durum', durum: this.durum, mod: this.mod, model: this.model, istenenModel: this.istenenModel, limit: this.limit, nesil: this.nesil };
+    return { t: 'durum', durum: this.durum, mod: this.mod, model: this.model, istenenModel: this.istenenModel, efor: this.efor, limit: this.limit, nesil: this.nesil };
   }
 
   #baslat(devam) {
@@ -139,7 +141,8 @@ class Kosu {
       '--include-partial-messages', '--permission-prompt-tool', 'stdio', '--allow-dangerously-skip-permissions',
       '--permission-mode', MOD_BAYRAGI[this.mod] || this.mod,
       ...(devam ? ['--resume', this.oturum] : ['--session-id', this.oturum]),
-      ...(this.istenenModel ? ['--model', this.istenenModel] : [])];
+      ...(this.istenenModel ? ['--model', this.istenenModel] : []),
+      ...(this.efor ? ['--effort', this.efor] : [])];
     const surec = spawn(komut, arg, { cwd: this.proje.yol, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     this.surec = surec;
     surec.stdout.setEncoding('utf8');
@@ -357,6 +360,17 @@ class Kosu {
     this.#gecici(this.anlik());
   }
 
+  /** Çalışan oturumda effort'u değiştirir; sonraki istekten itibaren geçerli. '' kullanıcının ayarına döndürür.
+   *  (2.1.322'de denendi: 'flag' katmanı kullanıcının model başına effortLevel ayarını da ezer; null bu katmanı kaldırır.) */
+  async eforAyarla(efor) {
+    if (!EFORLAR.includes(efor)) throw new Error('Geçersiz effort');
+    if (efor === this.efor) return;
+    const r = await this.#kontrolGonder({ subtype: 'apply_flag_settings', settings: { effortLevel: efor || null } });
+    if (r.subtype !== 'success') throw new Error(r.error || 'Effort değiştirilemedi');
+    this.efor = efor;
+    this.#gecici(this.anlik());
+  }
+
   abone(res, isaret) {
     // isaret: "<nesil>:<sıra>" (istemcinin gördüğü son kalıcı olay). Başka nesilden ya da günlük sıfırlanmadan
     // önceki bir işaretse istemcinin görüntüsü eskidir: geçmişi yeniden yükletip günlüğü baştan oynat.
@@ -385,7 +399,7 @@ export function kosuListesi() {
     .map(k => ({ oturum: k.oturum, proje: k.proje.kimlik, projeAd: k.proje.ad, durum: k.durum }));
 }
 
-export async function gonder(proje, { oturum, metin, resimler, mod, model }) {
+export async function gonder(proje, { oturum, metin, resimler, mod, model, efor }) {
   let k = oturum ? kosular.get(oturum) : null;
   if (k?.kapali) { kosular.delete(oturum); k = null; }
   if (!k) {
@@ -396,11 +410,12 @@ export async function gonder(proje, { oturum, metin, resimler, mod, model }) {
       devam = true;
       sinir = (await fsp.stat(dosya)).size;
     } else oturum = crypto.randomUUID();
-    k = new Kosu(proje, oturum, { devam, mod, model, sinir });
+    k = new Kosu(proje, oturum, { devam, mod, model, efor, sinir });
     kosular.set(oturum, k);
   } else {
     if (mod && mod !== k.mod) await k.modAyarla(mod).catch(() => {});
     if (typeof model === 'string' && model !== k.istenenModel) await k.modelAyarla(model).catch(() => {});
+    if (typeof efor === 'string' && efor !== k.efor) await k.eforAyarla(efor).catch(() => {});
   }
   k.gonder(metin, resimler);
   return k;

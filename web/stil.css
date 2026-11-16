@@ -154,7 +154,8 @@ pre.blok.hata { color: var(--kotu); }
 .yazma { border-top: 1px solid var(--cizgi); background: var(--zemin); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
 .yazma-ic { max-width: 860px; margin: 0 auto; background: var(--yuzey); border: 1px solid var(--cizgi); border-radius: 16px; padding: 8px 10px; box-shadow: var(--golge); }
 .yazma textarea { border: 0; background: transparent; resize: none; padding: 4px 4px; max-height: 40dvh; min-height: 28px; outline: none; display: block; }
-.yazma-alt { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.yazma-alt { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+@media (max-width: 520px) { .yazma-alt select { max-width: 30vw; } }
 .yazma-alt .bos { flex: 1; }
 .yazma-alt select { border-color: transparent; background: var(--yuzey2); }
 .ekler { display: flex; gap: 6px; flex-wrap: wrap; }

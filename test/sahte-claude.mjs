@@ -9,6 +9,7 @@ const arg = process.argv.slice(2);
 const deger = ad => { const i = arg.indexOf(ad); return i >= 0 ? arg[i + 1] : null; };
 const oturum = deger('--resume') || deger('--session-id');
 let mod = deger('--permission-mode') === 'manual' ? 'default' : deger('--permission-mode');
+let efor = deger('--effort') || 'ayar';
 const kayitDizini = path.join(process.env.KUMANDA_CLAUDE_DIZIN, 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
 const transkript = path.join(kayitDizini, `${oturum}.jsonl`);
 fs.mkdirSync(kayitDizini, { recursive: true });
@@ -67,7 +68,7 @@ async function tur(metin) {
       yaz({ type: 'result', subtype: 'error_during_execution', is_error: true, duration_ms: 5, session_id: oturum });
       return;
     }
-  } else await metinAkit(`Yanıt: **${metin}** (mod: ${mod})`);
+  } else await metinAkit(`Yanıt: **${metin}** (mod: ${mod}, efor: ${efor})`);
   yaz({ type: 'result', subtype: 'success', is_error: false, duration_ms: 1234, total_cost_usd: 0.01, result: 'tamam', session_id: oturum });
 }
 
@@ -86,6 +87,7 @@ readline.createInterface({ input: process.stdin }).on('line', satir => {
     const r = m.request;
     if (r.subtype === 'interrupt') kesildi = true;
     if (r.subtype === 'set_permission_mode') mod = r.mode;
+    if (r.subtype === 'apply_flag_settings' && 'effortLevel' in (r.settings || {})) efor = r.settings.effortLevel ?? 'ayar'; // null = kullanıcı ayarı
     if (r.subtype === 'set_permission_mode' && r.mode === 'bypassPermissions' && !arg.includes('--allow-dangerously-skip-permissions')) {
       yaz({ type: 'control_response', response: { subtype: 'error', request_id: m.request_id, error: 'bypass kapalı' } });
     } else yaz({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: r.subtype === 'set_model' ? { model: `claude-${r.model}` } : {} } });

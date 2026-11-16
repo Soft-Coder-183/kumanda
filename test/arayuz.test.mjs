@@ -208,7 +208,14 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   for (const f of form.dinleyiciler.submit) await f(olay(form));
   await bekle(30);
   const gonderilen = istekler.findLast(i => i.yol === `/api/proje/${PID}/gonder`).govde;
-  assert.deepEqual([gonderilen.oturum, gonderilen.metin, gonderilen.mod, gonderilen.resimler.length], [null, 'yeni istem', 'acceptEdits', 1]);
+  assert.deepEqual([gonderilen.oturum, gonderilen.metin, gonderilen.mod, gonderilen.efor, gonderilen.resimler.length], [null, 'yeni istem', 'acceptEdits', '', 1]);
+  const eforSec = hepsi.findLast(e => e.etiket === 'select' && e['aria-label'] === undefined && e.title?.startsWith('Effort'));
+  assert.ok(eforSec, 'effort seçici var');
+  akislar.at(-1).onmessage({ data: JSON.stringify({ t: 'durum', durum: 'hazir', mod: 'acceptEdits', efor: '', nesil: 'n1' }), lastEventId: '' });
+  eforSec.value = 'high';
+  for (const f of eforSec.dinleyiciler.change) await f(olay(eforSec));
+  await bekle(20);
+  assert.deepEqual(istekler.findLast(i => i.yol === `/api/oturum/${SID}/mod`)?.govde, { efor: 'high' }, 'canlı oturumda effort değişimi sunucuya gider');
   assert.equal(location.hash, `#/p/${PID}/s/${SID}`);
   assert.equal(akislar.length, once + 1);
   // akış kalıcı koparsa (sunucu yeniden başladı) geçmiş yeniden yüklenir

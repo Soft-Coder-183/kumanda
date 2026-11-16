@@ -17,7 +17,8 @@ let K, U, sunucu, cerez = '', alfa, oturum, nesil;
 
 const bosPort = () => new Promise(coz => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => coz(p)); }); });
 const yazDosya = (yol, icerik) => { fs.mkdirSync(path.dirname(yol), { recursive: true }); fs.writeFileSync(yol, icerik); };
-const ortam = () => ({ ...process.env, KUMANDA_VERI: veri, KUMANDA_CLAUDE_DIZIN: claudeDizin, KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(KOK, 'test', 'sahte-claude.mjs')]) });
+// KUMANDA_DOGRUDAN: --arkaplan WMI yerine doğrudan başlatsın (WMI ile başlayan süreç bu ortam değişkenlerini devralmaz).
+const ortam = () => ({ ...process.env, KUMANDA_DOGRUDAN: '1', KUMANDA_VERI: veri, KUMANDA_CLAUDE_DIZIN: claudeDizin, KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(KOK, 'test', 'sahte-claude.mjs')]) });
 
 async function iste(yol, { govde, baslik = {}, cerezli = true, taban = K, yontem } = {}) {
   const r = await fetch(taban + yol, {
@@ -189,14 +190,16 @@ test('ürün sunucusu: biletle giriş, dosya sunma, proje dışına çıkamama',
 });
 
 test('sohbet: istem gider, yanıt akar, tur biter', async () => {
-  const r = await gonder('merhaba dünya', { mod: 'default' });
+  assert.equal((await gonder('x', { efor: 'cok' })).kod, 400, 'geçersiz effort');
+  const r = await gonder('merhaba dünya', { mod: 'default', efor: 'low' });
   assert.equal(r.kod, 200);
   ({ oturum, nesil } = r.j);
   assert.match(oturum, /^[0-9a-f-]{36}$/);
   const olaylar = await akis('', sonucMu);
   assert.equal(olaylar[0].t, 'durum');
   assert.equal(olaylar.find(o => o.t === 'kullanici').metin, 'merhaba dünya');
-  assert.equal(olaylar.find(o => o.t === 'metin').metin, 'Yanıt: **merhaba dünya** (mod: default)');
+  assert.equal(olaylar.find(o => o.t === 'metin').metin, 'Yanıt: **merhaba dünya** (mod: default, efor: low)', 'effort süreç açılırken --effort ile verilir');
+  assert.equal(olaylar[0].efor, 'low');
   assert.equal(olaylar.at(-1).hata, null);
   const liste = await iste(`/api/proje/${alfa}`);
   assert.equal(liste.j.oturumlar[0].kimlik, oturum);
@@ -263,6 +266,22 @@ test('mod değişimi çalışan sürece iletilir', async () => {
   await gonder('mod denemesi');
   const olaylar = await akis(`${nesil}:0`, (o, hepsi) => sonucMu(o) && hepsi.some(x => x.t === 'metin' && x.metin.includes('mod denemesi')));
   assert.match(olaylar.filter(o => o.t === 'metin').at(-1).metin, /mod: plan/);
+});
+
+test('effort çalışan oturumda değişir ve varsayılana döner', async () => {
+  const r = await iste(`/api/oturum/${oturum}/mod`, { govde: { efor: 'max' } });
+  assert.equal(r.j.efor, 'max');
+  assert.equal((await iste(`/api/oturum/${oturum}/mod`, { govde: { efor: 'cok' } })).kod, 400);
+  const son = async metin => {
+    await gonder(metin);
+    const olaylar = await akis(`${nesil}:0`, (o, hepsi) => sonucMu(o) && hepsi.some(x => x.t === 'metin' && x.metin.includes(metin)));
+    return olaylar.filter(o => o.t === 'metin').at(-1).metin;
+  };
+  assert.match(await son('effort bir'), /efor: max/);
+  await gonder('effort iki', { efor: 'xhigh' }); // istemle birlikte gelen effort da uygulanır
+  assert.match((await akis(`${nesil}:0`, (o, hepsi) => sonucMu(o) && hepsi.some(x => x.t === 'metin' && x.metin.includes('effort iki')))).filter(o => o.t === 'metin').at(-1).metin, /efor: xhigh/);
+  assert.equal((await iste(`/api/oturum/${oturum}/mod`, { govde: { efor: '' } })).j.efor, '');
+  assert.match(await son('effort üç'), /efor: ayar/, 'boş seçim kullanıcının Claude Code ayarına döndürür');
 });
 
 test('süreç kapanınca geçmiş transkriptten okunur; yeni istem oturumu sürdürür', async () => {
