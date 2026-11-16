@@ -293,9 +293,24 @@ test('çıkış: kumanda ve ürün çerezleri birlikte geçersizleşir', async (
   assert.equal((await iste(`/p/${alfa}/index.html`, { taban: U, cerezli: false, baslik: { Cookie: urunCerez } })).kod, 401);
 });
 
-test('--durdur çalışan sunucuyu kapatır', async () => {
+test('--sifre-sifirla çalışan sunucuda da bütün cihazları çıkarır ve sunucuyu yeniden başlatır', async () => {
+  const giris = await iste('/api/giris', { govde: { sifre: SIFRE }, cerezli: false });
+  cerez = giris.baslik.get('set-cookie').split(';')[0];
+  assert.equal((await iste('/api/projeler')).kod, 200);
   const cikis = new Promise(coz => sunucu.on('exit', coz));
-  const r = spawnSync(process.execPath, [path.join(KOK, 'sunucu.mjs'), '--durdur'], { env: ortam(), encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(KOK, 'sunucu.mjs'), '--sifre-sifirla'], { env: ortam(), encoding: 'utf8', timeout: 20000 });
+  assert.match(r.stdout, /yeniden başlatıldı/);
+  await cikis; // eski süreç (bellekteki oturumlarıyla) kapandı
+  let d = null;
+  for (let i = 0; i < 40 && !d; i++) { try { d = (await iste('/api/durum')).j; } catch { await new Promise(c => setTimeout(c, 250)); } }
+  assert.equal(d?.kurulu, false, 'yeni süreçte şifre yok');
+  assert.equal((await iste('/api/projeler')).kod, 401, 'sıfırlamadan önceki cihaz çıkarılmış');
+});
+
+test('--durdur çalışan sunucuyu kapatır', async () => {
+  // Önceki testte yeniden başlatılan, ayrık (detached) süreç.
+  const r = spawnSync(process.execPath, [path.join(KOK, 'sunucu.mjs'), '--durdur'], { env: ortam(), encoding: 'utf8', timeout: 20000 });
   assert.match(r.stdout, /durduruldu/);
-  await cikis;
+  await assert.rejects(fetch(`${K}/api/durum`), 'sunucu kapandı');
+  assert.match(spawnSync(process.execPath, [path.join(KOK, 'sunucu.mjs'), '--durdur'], { env: ortam(), encoding: 'utf8' }).stdout, /çalışmıyor/);
 });

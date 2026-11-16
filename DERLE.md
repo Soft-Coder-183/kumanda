@@ -38,6 +38,7 @@ kısayolu + sunucuyu yeni kodla yeniden başlatma). Test geçmezse sunucuya doku
 .\uzak-kur.ps1 -Kapat        # uzak erişimi kapat
 node sunucu.mjs --durum      # çalışıyor mu
 node sunucu.mjs --durdur     # durdur
-node sunucu.mjs --sifre-sifirla   # şifreyi ve bütün cihaz oturumlarını sil (yenisi localhost'tan belirlenir)
+node sunucu.mjs --sifre-sifirla   # şifreyi unuttuysan: şifreyi ve bütün cihaz oturumlarını siler, çalışan sunucuyu
+                                  # yeniden başlatır; yeni şifre http://127.0.0.1:7777'den belirlenir
 npm test                     # yalnızca testler
 ```

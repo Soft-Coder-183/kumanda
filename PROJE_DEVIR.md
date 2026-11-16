@@ -134,6 +134,8 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
 - `test/` altındaki her `.mjs` varsayılan test keşfine girer; `sahte-claude.mjs` test değildir, bu yüzden keşif kullanılmaz.
 - Betiklerde ve belgelerde adres `127.0.0.1` yazılır, `localhost` değil: Windows PowerShell 5.1 `localhost`'u önce IPv6'da dener ve
   2 sn'lik zaman aşımına düşer; `kur.ps1` bu yüzden çalışan sunucuya "başlamadı" demişti (2026-11-14).
+- Cihaz oturumları (`cihazlar.json`) yalnızca sunucu açılırken okunur ve bellekte tutulur; başka bir süreçten dosyaya yazmak çalışan
+  sunucuyu etkilemez. Bu yüzden `--sifre-sifirla` önce sunucuyu durdurur, sıfırlar, sonra yeniden başlatır (2026-11-16).
 - `fetch` `Host` başlığını değiştirtmez; yabancı `Host` testi `http.request` ile yapılır.
 - `ayar.json` yokken sunucu varsayılan portlarla (7777/7778) açılır: ikinci örnek başlatılırken ayar dosyası **önce** yazılmalı.
 - Arayüz dosyaları `no-cache` ile sunulur (ETag); arayüz değişikliği için sunucuyu yeniden başlatmak gerekmez, sunucu kodu için gerekir.

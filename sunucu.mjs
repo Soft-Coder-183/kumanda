@@ -22,30 +22,49 @@ const yerelAdres = () => `http://127.0.0.1:${ayar.kumandaPort}`;
 
 // ───────────── komut satırı ─────────────
 const bayrak = process.argv[2];
-if (bayrak === '--arkaplan') {
+
+function arkaplandaBaslat() {
   // Penceresiz, bu terminalden bağımsız bir kopya başlat (oturum açılışındaki kısayol bunu kullanır).
   const gunluk = path.join(VERI, 'gunluk.txt');
   try { if (fs.statSync(gunluk).size > 2e6) fs.renameSync(gunluk, gunluk + '.eski'); } catch { /* yok */ }
   const cikti = fs.openSync(gunluk, 'a');
   spawn(process.execPath, [import.meta.filename], { detached: true, windowsHide: true, stdio: ['ignore', cikti, cikti], cwd: KOK }).unref();
+}
+const calisiyorMu = async () => { try { await fetch(`${yerelAdres()}/api/durum`, { signal: AbortSignal.timeout(1500) }); return true; } catch { return false; } };
+/** Çalışan sunucuyu durdurur ve gerçekten kapanmasını bekler. Çalışıyor idiyse true döner. */
+async function durdur() {
+  if (!(await calisiyorMu())) return false;
+  const r = await fetch(`${yerelAdres()}/api/yerel/kapat`, { method: 'POST', headers: { 'X-Kumanda': '1', 'X-Yerel-Anahtar': fs.readFileSync(YEREL_ANAHTAR_DOSYA, 'utf8') } });
+  if (!r.ok) throw new Error(`Durdurulamadı (${r.status}).`);
+  for (let i = 0; i < 40 && await calisiyorMu(); i++) await new Promise(c => setTimeout(c, 250));
+  if (await calisiyorMu()) throw new Error('Kumanda kapanmadı.');
+  await new Promise(c => setTimeout(c, 300)); // süreç çıkışını bitirsin
+  return true;
+}
+
+if (bayrak === '--arkaplan') {
+  arkaplandaBaslat();
   process.exit(0);
-} else if (bayrak === '--durdur' || bayrak === '--durum') {
+} else if (bayrak === '--durdur') {
+  try { console.log((await durdur()) ? 'Kumanda durduruldu.' : 'Kumanda çalışmıyor.'); }
+  catch (e) { console.log(e.message); process.exitCode = 1; }
+  process.exit();
+} else if (bayrak === '--durum') {
   try {
-    if (bayrak === '--durdur') {
-      const r = await fetch(`${yerelAdres()}/api/yerel/kapat`, { method: 'POST', headers: { 'X-Kumanda': '1', 'X-Yerel-Anahtar': fs.readFileSync(YEREL_ANAHTAR_DOSYA, 'utf8') } });
-      console.log(r.ok ? 'Kumanda durduruldu.' : `Durdurulamadı (${r.status}).`);
-    } else {
-      const d = await (await fetch(`${yerelAdres()}/api/durum`)).json();
-      console.log(`Kumanda ${d.surum} çalışıyor: ${yerelAdres()}  (şifre ${d.kurulu ? 'belirlenmiş' : 'BELİRLENMEMİŞ'})`);
-    }
-  } catch { console.log('Kumanda çalışmıyor.'); process.exitCode = bayrak === '--durum' ? 1 : 0; }
+    const d = await (await fetch(`${yerelAdres()}/api/durum`)).json();
+    console.log(`Kumanda ${d.surum} çalışıyor: ${yerelAdres()}  (şifre ${d.kurulu ? 'belirlenmiş' : 'BELİRLENMEMİŞ'})`);
+  } catch { console.log('Kumanda çalışmıyor.'); process.exitCode = 1; }
   process.exit();
 } else if (bayrak === '--portlar') {
   console.log(`${ayar.kumandaPort} ${ayar.urunPort}`); // kurulum betikleri için
   process.exit(0);
 } else if (bayrak === '--sifre-sifirla') {
+  // Çalışan sunucu cihaz oturumlarını bellekte tutar: önce durdurulmazsa eski cihazlar girişli kalırdı.
+  let calisiyordu;
+  try { calisiyordu = await durdur(); } catch (e) { console.log(`${e.message} Şifre sıfırlanmadı.`); process.exit(1); }
   kimlik.sifreSifirla();
-  console.log(`Şifre ve bütün cihaz oturumları silindi. Yeni şifreyi bu bilgisayardan belirle: ${yerelAdres()}`);
+  if (calisiyordu) arkaplandaBaslat();
+  console.log(`Şifre ve bütün cihaz oturumları silindi${calisiyordu ? '; Kumanda yeniden başlatıldı' : ''}. Yeni şifreyi bu bilgisayardan belirle: ${yerelAdres()}`);
   process.exit(0);
 }
 
