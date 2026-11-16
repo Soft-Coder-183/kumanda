@@ -2,8 +2,8 @@
 
 Eren'in bilgisayarındaki Claude Code'u ve bütün projelerinin ürünlerini (HTML, APK, EXE, ZIP, video, belge) telefondan ya da başka
 bir bilgisayardan kullanmasını sağlayan yerel sunucu + web arayüzü. Bağımlılıksız Node.js (22+), derleme adımı yok. Sunucu yalnızca
-`127.0.0.1`'i dinler; uzaktan erişim Tailscale yönlendirmesiyle gelir (kurulu, yalnızca kendi ağ). Durum: 1.0.0 + yayımlanmamış
-değişiklikler (`notlar/v1.1.0.md`), 2026-11-16; arayüzün gerçek tarayıcıdaki görünümü ve telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
+`127.0.0.1`'i dinler; uzaktan erişim Tailscale yönlendirmesiyle gelir (kurulu, yalnızca kendi ağ). Herkese açık depo (MIT):
+https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.0 (2026-11-16); gerçek telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
 
 ## Komutlar
 - Kurulum / yeniden başlatma: `.\kur.ps1` (otomatik başlatma kısayolu + sunucuyu yeni kodla başlatır)
@@ -12,6 +12,8 @@ değişiklikler (`notlar/v1.1.0.md`), 2026-11-16; arayüzün gerçek tarayıcıd
 - Test: `npm test` (gerçek sunucu süreci + `test/sahte-claude.mjs`; Claude kotası harcamaz, kendi geçici portlarını ve veri klasörünü kullanır)
 - Derleme: `DERLE.md` (tek komut: `.\derle.ps1`). Çıktı: çalışan sunucu, http://127.0.0.1:7777
 - Uzak erişim: `.\uzak-kur.ps1` (`-Herkese`, `-Kapat`)
+- README görüntüleri: `node araclar/ekran-goruntuleri.mjs` (playwright-core gerekir: `npm i --no-save playwright-core` ya da
+  `KUMANDA_PLAYWRIGHT=<playwright-core bulunan klasör>`); tanıtım verisiyle, gerçek veriye dokunmaz. Arayüz değişince yenile.
 
 ## Düzen
 - `sunucu.mjs`: giriş noktası; komut satırı bayrakları, API yolları, kumanda (7777) ve ürün (7778) sunucuları
@@ -42,7 +44,11 @@ değişiklikler (`notlar/v1.1.0.md`), 2026-11-16; arayüzün gerçek tarayıcıd
 
 ## Commit ve sürüm
 - Sürümün tek kaynağı `package.json` → `version` (arayüz ve `--durum` oradan okur). Notlar: `notlar/vX.Y.Z.md`.
-- Depo yerel (uzak depo yok). Commit'e dosyalar adıyla eklenir (G2); mesaj Türkçe, tek konu (G6).
+- Depo herkese açık (`origin` = GitHub, `main`'de çalışılır, push serbest). Commit'e dosyalar adıyla eklenir (G2); push'tan önce
+  yeni dosyalarda kişisel veri/sır denetimi (Tailscale adresi, kullanıcı yolları, transkript parçası girmez). Mesaj Türkçe, tek konu (G6).
+- Yayın: `package.json` sürümü → not tamam → commit → `git tag -a vX.Y.Z -m "Kumanda X.Y.Z"` → push → `gh release create vX.Y.Z
+  --notes-file notlar/vX.Y.Z.md` (dosya eklenmez). Yayımlanmış etiket taşınmaz.
+- README kullanıcıya dönük ve Türkçe; özellik ya da komut değişince güncellenir.
 - Her işten sonra bu dosya ve `PROJE_DEVIR.md` güncellenir (devret).
 
 ## Devir belgesinde

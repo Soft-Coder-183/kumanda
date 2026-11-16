@@ -41,4 +41,5 @@ node sunucu.mjs --durdur     # durdur
 node sunucu.mjs --sifre-sifirla   # şifreyi unuttuysan: şifreyi ve bütün cihaz oturumlarını siler, çalışan sunucuyu
                                   # yeniden başlatır; yeni şifre http://127.0.0.1:7777'den belirlenir
 npm test                     # yalnızca testler
+node araclar/ekran-goruntuleri.mjs   # README görüntüleri → belgeler\*.png (önce: npm i --no-save playwright-core)
 ```

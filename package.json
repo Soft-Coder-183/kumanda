@@ -1,9 +1,16 @@
 {
   "name": "kumanda",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Yerel Claude Code'u ve proje ürünlerini her cihazdan kullanmak için uzaktan kumanda",
+  "description": "Bilgisayarındaki Claude Code'u ve projelerinin ürünlerini telefondan ya da başka bir bilgisayardan kullan",
+  "license": "MIT",
+  "author": "Eren Akyurt",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Soft-Coder-183/kumanda.git"
+  },
+  "homepage": "https://github.com/Soft-Coder-183/kumanda#readme",
   "scripts": {
     "start": "node sunucu.mjs",
     "test": "node --test test/kumanda.test.mjs test/arayuz.test.mjs"

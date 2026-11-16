@@ -3,12 +3,12 @@
 Bilgisayardaki Claude Code'u ve proje ürünlerini her cihazdan kullanmak için yerel sunucu + web arayüzü. Bu belge, projeyi devralan
 bir ajanın önceki konuşmaları görmeden işe başlayabilmesi için yazıldı.
 
-- **Sahibi:** Eren (Türkçe konuşur). Kişisel kullanım; ürün paylaşılmıyor.
-- **Depo:** yalnızca yerel git deposu (uzak depo yok).
-- **Durum:** 1.0.0 yayımlandı (2026-11-13); yayımlanmamış değişiklikler `notlar/v1.1.0.md`'de (effort seçimi, WMI ile arka plan).
-  Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Tailscale yönlendirmesi kurulu (yalnızca kendi ağ, 2026-11-16),
-  https adresi bu bilgisayardan denendi. **Ajan tarafından denenmedi:** arayüzün gerçek tarayıcıdaki görünümü, telefondan kullanım,
-  telefonda bildirim. Bkz. Açık işler.
+- **Sahibi:** Eren (Türkçe konuşur). Kendi kullanımı için; depo herkese açık (MIT).
+- **Depo:** https://github.com/Soft-Coder-183/kumanda (herkese açık, 2026-11-16). Sürümler GitHub'da etiket + yayın olarak;
+  derlenecek bir şey olmadığı için yayına dosya eklenmez (kaynak zip'i yeterli).
+- **Durum:** 1.1.0 yayımlandı (2026-11-16). Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Arayüz başsız
+  Chrome'da denendi. Tailscale yönlendirmesi kurulu (yalnızca kendi ağ), https adresi bu bilgisayardan denendi.
+  **Ajan tarafından denenmedi:** gerçek telefondan kullanım, telefonda bildirim. Bkz. Açık işler.
 - **Devam eden iş:** yok.
 - **Kapsam notu:** Bu belge her parçayı saymaz. Kodda burada anlatılmayan bir bölüm görürsen değiştirmeden önce kullanıcıya sor.
 
@@ -42,6 +42,8 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 | `web/uygulama.js` | Bütün arayüz: `h()`, `md()`, görünümler (`projeSayfasi`, `sohbetGorunumu`, `tumUrunler`, `ayarlarSayfasi`) |
 | `web/sw.js` | Yalnızca bildirim için servis çalışanı |
 | `araclar/ikon-uret.mjs` | `web/ikon-*.png` üretir (ikon değişirse yeniden çalıştır) |
+| `araclar/ekran-goruntuleri.mjs` | README görüntüleri (`belgeler/*.png`): geçici klasörde tanıtım projeleri/sohbetleri + sahte Claude ile ayrı örnek (7797/7798), başsız Chrome; sayfa hatası olursa çıkış kodu 1. Arayüz değişince yeniden çalıştır |
+| `README.md`, `LICENSE` | Herkese açık depo yüzü (Türkçe); özellik/komut değişince README de güncellenir |
 | `kur.ps1`, `uzak-kur.ps1`, `derle.ps1` | Kurulum/otomatik başlatma, Tailscale, denetle+test+yeniden başlat |
 
 ## Özellikler
@@ -129,7 +131,7 @@ kullanmaz); bütün ürünler tek kökeni, dolayısıyla `localStorage`'ı payla
   `params.output_config.effort` alanından yapılır.
 - `--include-partial-messages` ile her içerik bloğu ayrı `assistant` satırı olarak, metin parçaları `stream_event` olarak gelir.
 - Yeni oturumda `--session-id <uuid>` ile kimliği biz veririz; `--resume` aynı kimliği ve aynı transkript dosyasını sürdürür.
-- Kısa (8.3) yol içeren çalışma klasöründe (`ERENAK~1`) Claude Code yazmayı "şüpheli yol" diye reddeder; projeler uzun yolla tutulur.
+- Kısa (8.3) yol içeren çalışma klasöründe (`C:\Users\ADINIZ~1\…` gibi) Claude Code yazmayı "şüpheli yol" diye reddeder; projeler uzun yolla tutulur.
 - Protokol değişirse önce `test/sahte-claude.mjs` gerçeğe uydurulur, sonra `oturumlar.mjs`.
 
 ## Derleme ve deneme
@@ -160,6 +162,9 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
   2 sn'lik zaman aşımına düşer; `kur.ps1` bu yüzden çalışan sunucuya "başlamadı" demişti (2026-11-14).
 - Cihaz oturumları (`cihazlar.json`) yalnızca sunucu açılırken okunur ve bellekte tutulur; başka bir süreçten dosyaya yazmak çalışan
   sunucuyu etkilemez. Bu yüzden `--sifre-sifirla` önce sunucuyu durdurur, sıfırlar, sonra yeniden başlatır (2026-11-16).
+- Arayüzde `hidden` özniteliği, `display` veren sınıfları (`.dugme`) ezemiyordu; "Durdur" hazır durumda da görünüyordu. Çözüm
+  `stil.css`'in başındaki `[hidden] { display: none !important; }` (2026-11-16, gerçek tarayıcı görüntüsünde fark edildi; sahte DOM
+  testi bunu yakalayamaz).
 - `fetch` `Host` başlığını değiştirtmez; yabancı `Host` testi `http.request` ile yapılır.
 - `ayar.json` yokken sunucu varsayılan portlarla (7777/7778) açılır: ikinci örnek başlatılırken ayar dosyası **önce** yazılmalı.
 - Arayüz dosyaları `no-cache` ile sunulur (ETag); arayüz değişikliği için sunucuyu yeniden başlatmak gerekmez, sunucu kodu için gerekir.
