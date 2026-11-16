@@ -14,6 +14,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* .dugme gibi display veren sınıflar hidden özniteliğini ezmesin */
 html, body { height: 100%; margin: 0; }
 body { background: var(--zemin); color: var(--metin); font: 15px/1.5 var(--yazi); -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -95,6 +96,14 @@ h2:first-child { margin-top: 0; }
 .urun .alt { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: auto; }
 .urun .alt .bos { flex: 1; }
 .urun.soluk { opacity: .62; }
+.oturum-grubu + .oturum-grubu { margin-top: 22px; }
+.oturum-bas { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; text-decoration: none; color: inherit; }
+.oturum-bas .ad { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }
+a.oturum-bas:hover .ad { color: var(--vurgu); }
+.urun-sohbet { display: block; font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; text-decoration: none; }
+.sohbet-urunleri { border-bottom: 1px solid var(--cizgi); background: var(--yuzey2); }
+.sohbet-urunleri > summary { cursor: pointer; padding: 8px 16px; font-size: 13.5px; font-weight: 600; max-width: 860px; margin: 0 auto; }
+.sohbet-urunleri-ic { padding: 0 14px 12px; max-width: 860px; margin: 0 auto; max-height: 45dvh; overflow-y: auto; }
 details.diger { margin-top: 12px; }
 details.diger > summary { cursor: pointer; color: var(--soluk); font-size: 13.5px; padding: 6px 0; }
 details.diger .urunler { margin-top: 8px; }
@@ -155,7 +164,7 @@ pre.blok.hata { color: var(--kotu); }
 .yazma-ic { max-width: 860px; margin: 0 auto; background: var(--yuzey); border: 1px solid var(--cizgi); border-radius: 16px; padding: 8px 10px; box-shadow: var(--golge); }
 .yazma textarea { border: 0; background: transparent; resize: none; padding: 4px 4px; max-height: 40dvh; min-height: 28px; outline: none; display: block; }
 .yazma-alt { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-@media (max-width: 520px) { .yazma-alt select { max-width: 30vw; } }
+@media (max-width: 520px) { .yazma-alt select { max-width: 44vw; } }
 .yazma-alt .bos { flex: 1; }
 .yazma-alt select { border-color: transparent; background: var(--yuzey2); }
 .ekler { display: flex; gap: 6px; flex-wrap: wrap; }

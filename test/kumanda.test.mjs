@@ -306,6 +306,44 @@ test('süreç kapanınca geçmiş transkriptten okunur; yeni istem oturumu sürd
   assert.equal((await iste(`/api/proje/${alfa}/gonder`, { govde: { oturum: '00000000-0000-4000-8000-000000000000', metin: 'x' } })).kod, 404);
 });
 
+test('ürünler, onları değiştiren sohbete bağlanır (alt ajanlar dahil, transkript büyüdükçe)', async () => {
+  const alfaYol = path.join(projeler, 'Alfa');
+  const kayit = path.join(claudeDizin, 'projects', alfaYol.replace(/[^a-zA-Z0-9]/g, '-'));
+  const satir = (o, z) => JSON.stringify({ ...o, cwd: alfaYol, timestamp: z }) + '\n';
+  const S1 = '11111111-1111-4111-8111-111111111111', S2 = '22222222-2222-4222-8222-222222222222';
+  fs.writeFileSync(path.join(kayit, `${S1}.jsonl`), JSON.stringify({ type: 'ai-title', aiTitle: 'Eski derleme' }) + '\n'
+    + satir({ type: 'user', message: { role: 'user', content: 'apk derle' } }, '2026-01-01T10:00:00.000Z')
+    + satir({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'tamam' }] } }, '2026-01-01T10:05:00.000Z'));
+  fs.writeFileSync(path.join(kayit, `${S2}.jsonl`), satir({ type: 'user', message: { role: 'user', content: 'siteyi kur' } }, '2026-01-20T09:00:00.000Z'));
+  yazDosya(path.join(kayit, S2, 'subagents', 'agent-x.jsonl'), satir({ type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [] } }, '2026-02-01T10:00:00.000Z'));
+  const zamanla = (goreli, z) => fs.utimesSync(path.join(alfaYol, goreli), new Date(z), new Date(z));
+  zamanla('dist/uyg-1.0.0.apk', '2026-01-01T10:04:00Z');   // S1'in etkinliğine 1 dk
+  zamanla('site/index.html', '2026-02-01T10:12:00Z');      // S2'nin alt ajanına 12 dk
+  zamanla('index.html', '2025-01-01T00:00:00Z');           // hiçbir sohbete yakın değil
+  zamanla('dist/uyg-1.10.0.apk', '2026-03-01T00:00:00Z');  // şimdilik hiçbirine yakın değil
+
+  const oku = async ek => (await iste(`/api/proje/${alfa}/urunler?taze${ek || ''}`)).j;
+  let v = await oku();
+  const oturumu = yol => v.urunler.find(u => u.yol === yol).oturum;
+  assert.equal(oturumu('dist/uyg-1.0.0.apk'), S1);
+  assert.equal(oturumu('site/index.html'), S2, 'alt ajan etkinliği ana oturuma sayılır');
+  assert.equal(oturumu('index.html'), null);
+  assert.equal(oturumu('dist/uyg-1.10.0.apk'), null);
+  assert.equal(v.oturumlar[S1].baslik, 'Eski derleme');
+  assert.equal(v.oturumlar[S2].baslik, 'siteyi kur', 'başlık yoksa ilk istem');
+
+  fs.appendFileSync(path.join(kayit, `${S1}.jsonl`), satir({ type: 'user', message: { role: 'user', content: 'yeni sürüm' } }, '2026-03-01T00:15:00.000Z'));
+  v = await oku();
+  assert.equal(oturumu('dist/uyg-1.10.0.apk'), S1, 'transkripte eklenen etkinlik görülür');
+  assert.equal(oturumu('dist/uyg-1.0.0.apk'), S1, 'önceki eşleşme korunur');
+
+  const tek = await oku(`&oturum=${S1}`);
+  assert.deepEqual(tek.urunler.map(u => u.yol).sort(), ['dist/uyg-1.0.0.apk', 'dist/uyg-1.10.0.apk']);
+  const genel = (await iste('/api/urunler')).j.gruplar.find(g => g.proje.kimlik === alfa);
+  assert.equal(genel.urunler.find(u => u.yol === 'site/index.html').oturum, S2);
+  assert.equal(genel.oturumlar[S2].baslik, 'siteyi kur');
+});
+
 test('çıkış: kumanda ve ürün çerezleri birlikte geçersizleşir', async () => {
   assert.equal((await iste('/api/cikis', { govde: {} })).kod, 200);
   assert.equal((await iste('/api/projeler')).kod, 401);

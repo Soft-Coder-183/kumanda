@@ -68,6 +68,19 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
   sürüm numarası dışında aynı adlı dosyaların eskileri. Hiçbir şey silinmez; yalnızca öne çıkarma.
 - Sonuç proje başına 60 sn önbelleklenir ("Yeniden tara" tazeler). Kullanıcının gizledikleri `ayar.gizliUrunler`'de.
 
+### Ürün → sohbet eşleşmesi (`urunleriOturumlaraBagla`, 2026-11-16)
+- Her ürün, dosyanın son değiştirilme anına en yakın etkinliği olan oturuma bağlanır (fark ≤ 20 dk; yoksa `oturum: null`,
+  arayüzde "Bir sohbete bağlanamayanlar"). Etkinlik = transkriptteki bütün `"timestamp"` değerleri; `<oturum>/subagents/*.jsonl`
+  alt ajan transkriptleri ana oturuma sayılır.
+- **Neden dosya adı değil zaman:** APK/EXE/ZIP derleme komutlarıyla yazılır, transkriptte adı geçmeyebilir. Bedeli: aynı projede iki
+  sohbet aynı anda çalışırken ürün yanlış sohbete düşebilir; dosyaya sonradan elle dokunulursa o anki sohbete geçer.
+- Transkriptler yalnızca sona eklenerek büyür: zaman damgaları dosya başına önbellekte; boyut büyüyünce yalnızca yeni kısım okunur
+  (93 MB'lık transkriptle ilk tarama ~0,3 sn, sonrakiler ~10 ms).
+- Uçlar: `GET /api/proje/:pid/urunler` → `{ urunler (her biri .oturum), oturumlar: { kimlik: { baslik, zaman } } }`, `?oturum=<kimlik>`
+  yalnızca o sohbetin ürünleri; `/api/urunler` her gruba `oturumlar` ekler.
+- Arayüz: proje → Ürünler sekmesi sohbet başlıklarına göre gruplu (en son ürün çıkaran üstte); sohbet ekranının üstünde katlanır
+  "Bu sohbetin ürünleri" (ürün yoksa gizli, tur bitince 1,5 sn sonra yeniden taranır); bütün ürünler sayfasında kartta sohbet bağı.
+
 ### Ürün sunumu
 - Arayüzdeki bağ `/ac?p=<proje>&y=<yol>` (kumanda kökeni) → tek kullanımlık, 60 sn'lik bilet → ürün kökeninde `/_ac` kendi çerezini
   (`kumanda_u`) kurar → `/p/<proje>/<yol>`. Bilet düzeni iki köken ayrı host'ta olsa da çalışsın diye var.
@@ -153,8 +166,9 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
 
 ## Açık işler
 
-- **Arayüz gerçek tarayıcıda denenmedi** (2026-11-13): Chrome eklentisi bağlı değildi. Yerleşim, taşmalar, telefon klavyesi davranışı,
-  karanlık tema gözle denetlenmeli.
+- **Arayüz gerçek tarayıcıda kısmen denendi** (2026-11-16): `araclar/ekran-goruntuleri.mjs` başsız Chrome'da (telefon 390 px açık
+  tema, masaüstü 1280 px koyu tema) projeler, ürünler, izin kartı ve sohbet ekranlarını hatasız açtı. Gerçek telefon klavyesi,
+  iOS Safari ve dokunma davranışı denenmedi.
 - **Uzak erişim telefondan denenmedi** (ajan tarafından): `uzak-kur.ps1` kullanıcı tarafından çalıştırıldı (2026-11-16), `serve`
   kuralları doğru (443 → 7777, 8443 → 7778, yalnızca kendi ağ); https adresi bu bilgisayardan yanıt veriyor ve vekil başlıkları
   algılanıyor (`yerel: false`). Telefonda giriş, ürün açma ve `Secure` çerez akışı gözle denenmeli.

@@ -11,7 +11,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { ayar, ayarIzle, ayarKaydet, ayarYukle, atomikYaz, KOK, VERI } from './src/ayar.mjs';
 import { HttpHata, Yonlendirici, cerezler, cerezYaz, dosyaGonder, duzMetin, istekBilgisi, json, jsonOku, yonlendir } from './src/http.mjs';
 import * as kimlik from './src/kimlik.mjs';
-import { guvenliYol, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele } from './src/projeler.mjs';
+import { guvenliYol, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele, urunleriOturumlaraBagla } from './src/projeler.mjs';
 import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi } from './src/oturumlar.mjs';
 import * as bildirim from './src/bildirim.mjs';
 
@@ -202,7 +202,7 @@ api.ekle('GET', '/api/urunler', async ({ res }) => {
   const gruplar = [];
   for (const p of projeler) {
     const urunler = await urunleriListele(p);
-    if (urunler.length) gruplar.push({ proje: projeOzeti(p), urunler });
+    if (urunler.length) gruplar.push({ proje: projeOzeti(p), urunler, oturumlar: await urunleriOturumlaraBagla(p, urunler) });
   }
   json(res, 200, { gruplar });
 });
@@ -236,7 +236,11 @@ api.ekle('POST', '/api/proje/:pid/gizle', async ({ req, res, p }) => {
 
 api.ekle('GET', '/api/proje/:pid/urunler', async ({ res, p, url }) => {
   const proje = await projeAl(p.pid);
-  json(res, 200, { urunler: await urunleriListele(proje, { taze: url.searchParams.has('taze'), gizliler: url.searchParams.has('gizliler') }) });
+  let urunler = await urunleriListele(proje, { taze: url.searchParams.has('taze'), gizliler: url.searchParams.has('gizliler') });
+  const oturumlar = await urunleriOturumlaraBagla(proje, urunler);
+  const tek = url.searchParams.get('oturum'); // yalnızca bu sohbetin ürünleri
+  if (tek) urunler = urunler.filter(u => u.oturum === tek);
+  json(res, 200, { urunler, oturumlar });
 });
 
 api.ekle('POST', '/api/proje/:pid/urun-gizle', async ({ req, res, p }) => {

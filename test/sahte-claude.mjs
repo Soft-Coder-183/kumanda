@@ -52,8 +52,9 @@ async function tur(metin) {
   yaz({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.25 }, seven_day: { utilization: 0.1 } } } });
   kaydet({ type: 'user', message: { role: 'user', content: metin } });
   if (metin.includes('izin')) {
-    const { id, yanit } = await izinIste('Bash', { command: 'echo merhaba', description: 'Selam ver' },
-      { decision_reason: 'Bu komut onay gerektirir', permission_suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'echo merhaba' }], behavior: 'allow', destination: 'localSettings' }] });
+    const komut = /komut:\s*(.+)$/m.exec(metin)?.[1].trim() || 'echo merhaba'; // tanıtım görüntüleri için
+    const { id, yanit } = await izinIste('Bash', { command: komut, description: 'Selam ver' },
+      { decision_reason: 'Bu komut onay gerektirir', permission_suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: komut }], behavior: 'allow', destination: 'localSettings' }] });
     if (yanit.behavior === 'allow') { aracSonucu(id, 'merhaba'); await metinAkit(yanit.updatedPermissions ? 'Komut çalıştı (kural kaydedildi).' : 'Komut çalıştı.'); }
     else { aracSonucu(id, yanit.message, true); await metinAkit('Komut reddedildi.'); }
   } else if (metin.includes('soru')) {

@@ -36,8 +36,8 @@ function oge(etiket) {
 const SID = '11111111-2222-4333-8444-555555555555', PID = 'aaaaaaaaaaaa';
 const simdi = Date.now();
 const urunler = [
-  { yol: 'index.html', ad: 'index.html', tur: 'web', boyut: 900, zaman: simdi, baslik: 'Alfa Sitesi' },
-  { yol: 'dist/a-1.0.apk', ad: 'a-1.0.apk', tur: 'android', boyut: 5e6, zaman: simdi - 9e7, ikincil: 'eski sürüm' },
+  { yol: 'index.html', ad: 'index.html', tur: 'web', boyut: 900, zaman: simdi, baslik: 'Alfa Sitesi', oturum: SID },
+  { yol: 'dist/a-1.0.apk', ad: 'a-1.0.apk', tur: 'android', boyut: 5e6, zaman: simdi - 9e7, ikincil: 'eski sürüm', oturum: SID },
   { yol: 'dist/a.exe', ad: 'a.exe', tur: 'windows', boyut: 5e7, zaman: simdi - 9e9, gizli: true },
   { yol: 'belge/sunum.pptx', ad: 'sunum.pptx', tur: 'belge', boyut: 100, zaman: simdi },
   { yol: 'not.pdf', ad: 'not.pdf', tur: 'belge', boyut: 100, zaman: simdi },
@@ -50,8 +50,8 @@ const yanitlar = {
   '/api/durum': { surum: '1.0.0', kurulu: true, yerel: true, enAzSifre: 10, giris: true },
   '/api/projeler': { projeler: [{ ...proje, urunSayisi: 2, canli: ['calisiyor'] }, { ...proje, kimlik: 'bbbbbbbbbbbb', ad: 'Beta', sonEtkinlik: 0, urunSayisi: 0, canli: [], gizli: true }] },
   [`/api/proje/${PID}`]: { proje, oturumlar: [{ kimlik: SID, baslik: 'İlk sohbet', zaman: simdi, canli: 'bekliyor' }, { kimlik: 'x', baslik: 'Eski', zaman: simdi - 9e9, canli: null }] },
-  [`/api/proje/${PID}/urunler`]: { urunler },
-  '/api/urunler': { gruplar: [{ proje, urunler }] },
+  [`/api/proje/${PID}/urunler`]: { urunler, oturumlar: { [SID]: { baslik: 'APK derleme sohbeti', zaman: simdi } } },
+  '/api/urunler': { gruplar: [{ proje, urunler, oturumlar: { [SID]: { baslik: 'APK derleme sohbeti', zaman: simdi } } }] },
   [`/api/proje/${PID}/oturum/${SID}`]: {
     kirpildi: true,
     ogeler: [{ t: 'kullanici', metin: 'selam', resim: 1 }, { t: 'metin', metin: ZENGIN }, { t: 'arac', id: 't0', ad: 'Read', girdi: { file_path: 'C:\\a\\b.txt' } }, { t: 'arac-sonuc', id: 't0', hata: false, metin: 'içerik' }, { t: 'not', metin: '/clear' }],
@@ -123,6 +123,9 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.ok(metinler(kok).includes('İlk sohbet'));
   await git(`#/p/${PID}/urunler`);
   assert.ok(metinler(kok).includes('Alfa Sitesi'));
+  assert.ok(metinler(kok).includes('APK derleme sohbeti'), 'ürünler sohbet başlığı altında gruplanır');
+  assert.ok(metinler(kok).includes('Bir sohbete bağlanamayanlar'));
+  assert.ok(hepsi.slice(bas).some(e => e.etiket === 'a' && e.className === 'oturum-bas' && e.href === `#/p/${PID}/s/${SID}`), 'grup başlığı sohbete gider');
   assert.ok(metinler(kok).includes('Yükle'), 'Android cihazda APK için "Yükle"');
   assert.ok(metinler(kok).includes('Yalnızca Windows'));
   const baglar = hepsi.slice(bas).filter(e => e.etiket === 'a' && String(e.href).startsWith('/ac?'));
@@ -130,6 +133,7 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.ok(baglar.some(e => e.href === `/ac?p=${PID}&y=${encodeURIComponent('dist/a-1.0.apk')}&indir=1`));
   await hepsineBas(bas);
   await git('#/urunler');
+  assert.ok(metinler(kok).includes('Sohbet: APK derleme sohbeti'), 'bütün ürünler sayfasında kartta sohbet bağı');
   await git('#/ayarlar');
   await bekle(50);
   assert.ok(metinler(kok).includes('Windows · Edge'));
@@ -147,6 +151,10 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   }
   assert.ok(!zengin.innerHTML.includes('<script>'), 'HTML kaçırılır');
   assert.equal(akislar.length, 1, 'canlı oturumda akış açıldı');
+  assert.ok(istekler.some(i => i.yol === `/api/proje/${PID}/urunler?oturum=${SID}`), 'sohbetin ürünleri istendi');
+  const panel = hepsi.slice(bas).find(e => e.className === 'sohbet-urunleri');
+  assert.equal(panel.hidden, false, 'ürünü olan sohbette panel görünür');
+  assert.ok(metinler(panel).some(m => m.startsWith('Bu sohbetin ürünleri')));
   const akis = akislar[0];
   assert.equal(akis.url, `/api/oturum/${SID}/akis`);
   let n = 0;

@@ -157,7 +157,10 @@ function urunEylemi(u) {
   }
 }
 
-function urunKarti(pid, u, yenile) {
+const sohbetAdi = o => o?.baslik || 'Başlıksız sohbet';
+
+/** oturumlar verilirse kartta ürünü üreten sohbetin bağı da görünür (bütün ürünler sayfası). */
+function urunKarti(pid, u, yenile, oturumlar = null) {
   const e = urunEylemi(u);
   const adres = `/ac?p=${pid}&y=${encodeURIComponent(u.yol)}${e.indir ? '&indir=1' : ''}`;
   const klasor = u.yol.includes('/') ? u.yol.slice(0, u.yol.lastIndexOf('/')) : '';
@@ -166,7 +169,8 @@ function urunKarti(pid, u, yenile) {
       h('div', { class: 'tur' }, turAdi(u)),
       h('div', { style: 'min-width:0' },
         h('div', { class: 'ad' }, u.baslik || u.ad),
-        h('div', { class: 'yol' }, u.baslik ? u.yol : (klasor || 'proje kökü')))),
+        h('div', { class: 'yol' }, u.baslik ? u.yol : (klasor || 'proje kökü')),
+        oturumlar && u.oturum && h('a', { class: 'urun-sohbet', href: `#/p/${pid}/s/${u.oturum}` }, `Sohbet: ${sohbetAdi(oturumlar[u.oturum])}`))),
     h('div', { class: 'alt' },
       h('span', { class: 'rozet' }, boyutYaz(u.boyut)),
       h('span', { class: 'rozet' }, goreliZaman(u.zaman)),
@@ -179,16 +183,37 @@ function urunKarti(pid, u, yenile) {
       h('a', { class: `dugme kucuk${e.uyumlu ? ' ana' : ''}`, href: adres, target: '_blank', rel: 'noopener' }, e.ad)));
 }
 
-function urunIzgarasi(pid, urunler, yenile) {
+function urunIzgarasi(pid, urunler, yenile, oturumlar = null) {
   const asil = urunler.filter(u => !u.ikincil && !u.gizli);
   const diger = urunler.filter(u => u.ikincil || u.gizli);
   // Her zaman yalnızca DOM öğelerinden oluşan bir dizi döner (replaceChildren'e yayılarak verilir).
   return [
-    asil.length ? h('div', { class: 'urunler' }, asil.map(u => urunKarti(pid, u, yenile))) : null,
+    asil.length ? h('div', { class: 'urunler' }, asil.map(u => urunKarti(pid, u, yenile, oturumlar))) : null,
     diger.length ? h('details', { class: 'diger' },
       h('summary', {}, `Diğer dosyalar (${diger.length}): kopyalar, eski sürümler, kaynak dosyaları, gizlenenler`),
-      h('div', { class: 'urunler' }, diger.map(u => urunKarti(pid, u, yenile)))) : null,
+      h('div', { class: 'urunler' }, diger.map(u => urunKarti(pid, u, yenile, oturumlar)))) : null,
   ].filter(Boolean);
+}
+
+/** Ürünleri, onları üreten sohbete göre gruplar: en son ürün çıkaran sohbet üstte, hiçbir sohbete bağlanamayanlar en altta. */
+function oturumGruplari(pid, urunler, oturumlar, yenile) {
+  const gruplar = new Map();
+  for (const u of urunler) {
+    const k = u.oturum || '';
+    if (!gruplar.has(k)) gruplar.set(k, []);
+    gruplar.get(k).push(u);
+  }
+  const sira = [...gruplar.entries()].sort(([a, x], [b, y]) =>
+    (a === '') - (b === '') || Math.max(...y.map(u => u.zaman)) - Math.max(...x.map(u => u.zaman)));
+  return sira.map(([sid, liste]) => h('section', { class: 'oturum-grubu' },
+    sid
+      ? h('a', { class: 'oturum-bas', href: `#/p/${pid}/s/${sid}` },
+        h('span', { class: 'ad' }, sohbetAdi(oturumlar[sid])),
+        h('span', { class: 'sonuk kucuk' }, `${goreliZaman(Math.max(...liste.map(u => u.zaman)))} · sohbete git ›`))
+      : h('div', { class: 'oturum-bas' },
+        h('span', { class: 'ad' }, 'Bir sohbete bağlanamayanlar'),
+        h('span', { class: 'sonuk kucuk' }, 'Claude Code dışında ya da çok önce değişmiş dosyalar')),
+    urunIzgarasi(pid, liste, yenile)));
 }
 
 // ───────── giriş / ilk kurulum ─────────
@@ -324,9 +349,9 @@ function projeSayfasi(pid, sekme) {
         if (iptal) return;
         govde.replaceChildren(
           h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:12px' },
-            h('span', { class: 'sonuk kucuk', style: 'flex:1' }, v.urunler.length ? 'Bu projenin açılabilir ve indirilebilir çıktıları' : ''),
+            h('span', { class: 'sonuk kucuk', style: 'flex:1' }, v.urunler.length ? 'Her ürün, onu son değiştiren sohbetin altında' : ''),
             h('button', { class: 'dugme kucuk', onclick: () => yukle(true) }, 'Yeniden tara')),
-          ...(v.urunler.length ? urunIzgarasi(pid, v.urunler, () => yukle(false))
+          ...(v.urunler.length ? oturumGruplari(pid, v.urunler, v.oturumlar || {}, () => yukle(false))
             : [h('div', { class: 'bos-durum' }, 'Bu projede ürün bulunamadı (HTML, APK, EXE, ZIP, video, belge).')]));
       }
     } catch (x) { if (!iptal && x.kod !== 401) govde.replaceChildren(h('div', { class: 'bos-durum' }, x.message)); }
@@ -346,7 +371,7 @@ function tumUrunler() {
       if (iptal) return;
       govde.replaceChildren(...(v.gruplar.length ? v.gruplar.flatMap(g => [
         h('h2', {}, h('a', { href: `#/p/${g.proje.kimlik}/urunler`, style: 'color:inherit;text-decoration:none' }, g.proje.ad)),
-        ...urunIzgarasi(g.proje.kimlik, g.urunler, yukle),
+        ...urunIzgarasi(g.proje.kimlik, g.urunler, yukle, g.oturumlar || {}),
       ]) : [h('div', { class: 'bos-durum' }, 'Hiçbir projede ürün bulunamadı.')]));
     } catch (x) { if (!iptal && x.kod !== 401) govde.replaceChildren(h('div', { class: 'bos-durum' }, x.message)); }
   }
@@ -356,8 +381,9 @@ function tumUrunler() {
 
 // ───────── sohbet ─────────
 const MOD_ADI = { default: 'Her şeyi sor', acceptEdits: 'Düzenlemelere izin', auto: 'Otomatik', plan: 'Plan modu', bypassPermissions: 'Hepsine izin (riskli)' };
-const MODEL_ADI = { '': 'Varsayılan model', fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
-const EFOR_ADI = { '': 'Varsayılan effort', low: 'Effort: düşük', medium: 'Effort: orta', high: 'Effort: yüksek', xhigh: 'Effort: çok yüksek', max: 'Effort: en yüksek' };
+// Seçiciler telefonda dar: varsayılan seçenek tek kelime (ayrıntı title/aria-label'da).
+const MODEL_ADI = { '': 'Model', fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
+const EFOR_ADI = { '': 'Effort', low: 'Effort: düşük', medium: 'Effort: orta', high: 'Effort: yüksek', xhigh: 'Effort: çok yüksek', max: 'Effort: en yüksek' };
 
 function aracOzeti(ad, g = {}) {
   const dosya = y => String(y || '').split(/[\\/]/).pop();
@@ -418,8 +444,8 @@ function sohbetGorunumu(pid, sid) {
   const alan = h('textarea', { rows: 1, placeholder: 'Claude\'a yaz…', 'aria-label': 'İstem' });
   const dosyaGirdi = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
   const modSec = h('select', { 'aria-label': 'İzin modu' }, Object.entries(MOD_ADI).map(([d, a]) => h('option', { value: d }, a)));
-  const modelSec = h('select', { 'aria-label': 'Model' }, Object.entries(MODEL_ADI).map(([d, a]) => h('option', { value: d }, a)));
-  const eforSec = h('select', { 'aria-label': 'Effort (düşünme derinliği)', title: 'Effort: düşük = hızlı ve az kota, en yüksek = en derin ve en çok kota' },
+  const modelSec = h('select', { 'aria-label': 'Model', title: 'Model ("Model" = Claude Code ayarındaki varsayılan)' }, Object.entries(MODEL_ADI).map(([d, a]) => h('option', { value: d }, a)));
+  const eforSec = h('select', { 'aria-label': 'Effort (düşünme derinliği)', title: 'Effort ("Effort" = Claude Code ayarındaki varsayılan). Düşük: hızlı ve az kota, en yüksek: en derin ve en çok kota' },
     Object.entries(EFOR_ADI).map(([d, a]) => h('option', { value: d }, a)));
   const durdurDugme = h('button', { class: 'dugme kucuk tehlike', type: 'button', hidden: true, onclick: () => api(`/api/oturum/${sid}/kes`, {}).catch(x => bildir(x.message)) }, 'Durdur');
   const gonderDugme = h('button', { class: 'dugme ana kucuk', type: 'submit' }, 'Gönder');
@@ -431,7 +457,24 @@ function sohbetGorunumu(pid, sid) {
         h('button', { class: 'dugme duz kucuk', type: 'button', title: 'Resim ekle', 'aria-label': 'Resim ekle', onclick: () => dosyaGirdi.click() }, '＋'),
         dosyaGirdi, modSec, modelSec, eforSec, h('span', { class: 'bos' }), durdurDugme, gonderDugme)));
 
-  ana.replaceChildren(ustCubuk({ baslik: baslikEl, alt: projeAdi(pid), geri: `#/p/${pid}` }), kaydirEl, durumEl, form);
+  // Bu sohbetin ürettiği/değiştirdiği ürünler (sohbet bitince yeniden taranır; yoksa gizli kalır).
+  const urunPanel = h('details', { class: 'sohbet-urunleri', hidden: true });
+  let urunSayaci = 0;
+  async function urunleriYukle(taze) {
+    if (!sid || kapandi) return;
+    try {
+      const v = await api(`/api/proje/${pid}/urunler?oturum=${sid}${taze ? '&taze' : ''}`);
+      if (kapandi) return;
+      const acik = urunPanel.open;
+      urunPanel.replaceChildren(h('summary', {}, `Bu sohbetin ürünleri (${v.urunler.length})`),
+        h('div', { class: 'sohbet-urunleri-ic' }, ...urunIzgarasi(pid, v.urunler, () => urunleriYukle(false))));
+      urunPanel.open = acik;
+      urunPanel.hidden = !v.urunler.length;
+    } catch { /* ağ hatası: panel olduğu gibi kalsın */ }
+  }
+  const urunleriTazele = () => { clearTimeout(urunSayaci); urunSayaci = setTimeout(() => urunleriYukle(true), 1500); };
+
+  ana.replaceChildren(ustCubuk({ baslik: baslikEl, alt: projeAdi(pid), geri: `#/p/${pid}` }), urunPanel, kaydirEl, durumEl, form);
 
   // ── görüntü ──
   const dipte = () => kaydirEl.scrollHeight - kaydirEl.scrollTop - kaydirEl.clientHeight < 120;
@@ -582,6 +625,7 @@ function sohbetGorunumu(pid, sid) {
       case 'limit': if (canli) { canli.limit = o.limit; durumCiz(); } break;
       default:
         if ((o.t === 'sonuc' || o.t === 'izin') && document.hidden) document.title = '● Kumanda';
+        if (o.t === 'sonuc') urunleriTazele();
         ogeCiz(o);
     }
   }
@@ -685,6 +729,7 @@ function sohbetGorunumu(pid, sid) {
 
   if (sid) {
     gecmisYukle();
+    urunleriYukle(false);
     api(`/api/proje/${pid}`).then(v => { const o = v.oturumlar.find(x => x.kimlik === sid); if (o && !kapandi) baslikEl.textContent = o.baslik; }).catch(() => {});
   } else {
     akisEl.append(h('div', { class: 'bos-durum' }, `${projeAdi(pid) || 'Bu proje'} klasöründe yeni bir Claude Code sohbeti. Ne yapılsın?`));
@@ -692,7 +737,7 @@ function sohbetGorunumu(pid, sid) {
   }
   durumCiz();
 
-  return { kapat() { kapandi = true; akisKapat(); clearTimeout(gizliSayaci); clearTimeout(cizim); document.removeEventListener('visibilitychange', gorunurluk); } };
+  return { kapat() { kapandi = true; akisKapat(); clearTimeout(gizliSayaci); clearTimeout(cizim); clearTimeout(urunSayaci); document.removeEventListener('visibilitychange', gorunurluk); } };
 }
 
 // ───────── ayarlar ─────────

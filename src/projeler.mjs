@@ -211,6 +211,84 @@ export async function oturumDosyasi(proje, oturumKimligi) {
   return null;
 }
 
+// ---------- ürünleri üreten oturumu bulma ----------
+// Bir ürün, son değiştirildiği ana en yakın etkinliği olan oturuma bağlanır (±ESLESME). Dosya adı aramak yerine zaman
+// kullanılır, çünkü derlenen ürünler (APK, EXE, ZIP) Write aracıyla değil derleme komutlarıyla yazılır ve transkriptte
+// adları geçmeyebilir. Transkriptler yalnızca sona eklenerek büyür: önbellekte tutulur, büyüyünce yalnızca yeni kısım okunur.
+const ESLESME = 20 * 60e3;
+const ZAMAN = /"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)"/g;
+const zamanOnbellek = new Map(); // dosya → { boyut, zamanlar: number[] (sıralı) }
+
+async function zamanlariOku(dosya) {
+  let boyut;
+  try { boyut = (await fsp.stat(dosya)).size; } catch { return []; }
+  const k = zamanOnbellek.get(dosya);
+  if (k?.boyut === boyut) return k.zamanlar;
+  const buyudu = k && boyut > k.boyut;
+  const zamanlar = buyudu ? [...k.zamanlar] : [];
+  const el = await fsp.open(dosya, 'r');
+  try {
+    const PARCA = 8 * 1024 * 1024, ORTUSME = 96; // parça sınırında bölünen damga kaçmasın
+    for (let bas = buyudu ? Math.max(0, k.boyut - ORTUSME) : 0; bas < boyut; bas += PARCA - ORTUSME) {
+      const tampon = Buffer.alloc(Math.min(PARCA, boyut - bas));
+      const { bytesRead } = await el.read(tampon, 0, tampon.length, bas);
+      const metin = tampon.subarray(0, bytesRead).toString('latin1'); // damgalar ASCII; çözümleme hızlı ve bölünmez
+      for (const m of metin.matchAll(ZAMAN)) zamanlar.push(Date.parse(m[1]));
+      if (bytesRead < tampon.length) break;
+    }
+  } finally { await el.close(); }
+  zamanlar.sort((a, b) => a - b);
+  zamanOnbellek.set(dosya, { boyut, zamanlar });
+  return zamanlar;
+}
+
+/** oturum kimliği → sıralı etkinlik zamanları (alt ajanların etkinliği ana oturuma sayılır). */
+async function oturumEtkinlikleri(proje) {
+  const sonuc = new Map();
+  const ekle = (sid, z) => { const l = sonuc.get(sid); if (l) l.push(...z); else sonuc.set(sid, [...z]); };
+  for (const dizin of new Set([...proje.kayitDizinleri, kayitDizini(proje)])) {
+    let girdiler;
+    try { girdiler = await fsp.readdir(dizin, { withFileTypes: true }); } catch { continue; }
+    for (const g of girdiler) {
+      if (g.isFile() && /^[0-9a-f-]{36}\.jsonl$/i.test(g.name)) ekle(g.name.slice(0, -6), await zamanlariOku(path.join(dizin, g.name)));
+      else if (g.isDirectory() && /^[0-9a-f-]{36}$/i.test(g.name)) {
+        let altlar = [];
+        try { altlar = (await fsp.readdir(path.join(dizin, g.name, 'subagents'))).filter(f => f.endsWith('.jsonl')); } catch { /* alt ajan yok */ }
+        for (const f of altlar) ekle(g.name, await zamanlariOku(path.join(dizin, g.name, 'subagents', f)));
+      }
+    }
+  }
+  for (const l of sonuc.values()) l.sort((a, b) => a - b);
+  return sonuc;
+}
+
+function enYakinFark(sirali, t) {
+  let a = 0, b = sirali.length - 1;
+  if (b < 0) return Infinity;
+  while (a < b) { const o = (a + b) >> 1; if (sirali[o] < t) a = o + 1; else b = o; }
+  return Math.min(Math.abs(sirali[a] - t), a > 0 ? Math.abs(sirali[a - 1] - t) : Infinity);
+}
+
+/** Her ürüne `oturum` (kimlik ya da null) yazar; bağlanan oturumların başlıklarını döndürür. */
+export async function urunleriOturumlaraBagla(proje, urunler) {
+  const etkinlik = await oturumEtkinlikleri(proje);
+  for (const u of urunler) {
+    let enIyi = null, fark = ESLESME;
+    for (const [sid, zamanlar] of etkinlik) {
+      const f = enYakinFark(zamanlar, u.zaman);
+      if (f <= fark) { fark = f; enIyi = sid; }
+    }
+    u.oturum = enIyi;
+  }
+  const gereken = new Set(urunler.map(u => u.oturum).filter(Boolean));
+  const oturumlar = {};
+  if (gereken.size) {
+    for (const o of await oturumlariListele(proje, 2000)) if (gereken.has(o.kimlik)) oturumlar[o.kimlik] = { baslik: o.baslik, zaman: o.zaman };
+    for (const sid of gereken) oturumlar[sid] ||= { baslik: null, zaman: etkinlik.get(sid)?.at(-1) || 0 };
+  }
+  return oturumlar;
+}
+
 // ---------- ürün taraması ----------
 const UZANTI = {
   '.html': 'web', '.htm': 'web', '.apk': 'android', '.exe': 'windows', '.msi': 'windows', '.zip': 'paket',
