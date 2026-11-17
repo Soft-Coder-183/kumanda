@@ -12,8 +12,10 @@ kumandadır.
   <img src="belgeler/telefon-izin.png" width="190" alt="Sohbet ve izin kartı">
   <img src="belgeler/telefon-urunler.png" width="190" alt="Bir projenin ürünleri, sohbetlere göre">
   <img src="belgeler/telefon-tum-urunler.png" width="190" alt="Bütün ürünler: proje ve sohbet grupları, gizlenenler">
+  <img src="belgeler/telefon-dosyalar.png" width="190" alt="Telefonda proje dosyaları çekmecesi">
 </p>
 <p align="center"><img src="belgeler/masaustu-sohbet.png" width="780" alt="Masaüstünde koyu tema"></p>
+<p align="center"><img src="belgeler/masaustu-dosyalar.png" width="780" alt="Masaüstünde proje dosyaları gezgini ve renklendirilmiş kod"></p>
 
 <sub>Görüntüler tanıtım verisiyle üretildi (`araclar/ekran-goruntuleri.mjs`); gerçek bir projeye ait değildir.</sub>
 
@@ -35,7 +37,12 @@ kumandadır.
   durur; üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF
   tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir, eski sürümler ve kopyalar
   "Diğer dosyalar" altına iner. **Gizle** dediğin dosya silinmez: aynı sohbetin altındaki "Gizlediklerin" kutusuna geçer,
-  **Göster** ile geri gelir.
+  **Göster** ile geri gelir; **Gizlenenlerin hepsini göster** hepsini birden geri alır.
+- **Proje dosyaları, VS Code'daki gibi.** Klasör düğmesi (`Ctrl+Shift+E`) projeyi ağaç olarak açar; dosyalar satır numaralı ve
+  renklendirilmiş görünür, Markdown önizlemeli, resimler doğrudan. Yalnızca görüntüleme; nokta ile başlayan dosyalar (`.env`…)
+  gösterilmez.
+- **Esnek düzen.** Bilgisayarda proje listesi ve dosyalar paneli kenarından sürüklenerek genişler, daralır, kapanır (`Ctrl+B`);
+  telefonda proje listesi sağa kaydırınca soldan açılır, sola kaydırınca kapanır.
 - **Bildirim.** Sayfa kapalıyken Claude işini bitirince ya da izin beklerken telefonuna bildirim gelir (cihaz başına açılır).
 - **Koptuğunda iş durmaz.** Telefonun uykuya geçse de Claude çalışmaya devam eder; geri döndüğünde kaldığı yerden görürsün.
 - **Açık ve koyu tema, telefona uygun düzen, ana ekrana eklenebilir (PWA).**
@@ -102,6 +109,8 @@ Kumanda'ya giren kişi, Claude aracılığıyla bilgisayarında komut çalışt�
 - Şifre scrypt ile özetlenir; açık hâli hiçbir yerde saklanmaz. 15 dakikada 5 hatalı denemeden sonra giriş kilitlenir.
 - Cihaz oturumları `HttpOnly` çerezle tutulur ve Ayarlar'dan tek tek kapatılabilir.
 - Ürün dosyaları ayrı bir kökenden (ayrı port) sunulur: bir ürün HTML'inin içindeki betik Kumanda'nın API'sini kullanamaz.
+  Dosya gezgini de dosyaları Kumanda'nın içinde yalnızca düz metin olarak gösterir; hiçbir dosya orada sayfa ya da betik olarak
+  çalışmaz.
 - Ayarlar, şifre özeti ve oturumlar proje klasöründe değil `%LOCALAPPDATA%\Kumanda\` altında durur; depoya girmez.
 - Claude'un izin kuralları senin Claude Code ayarlarındır; Kumanda bunları gevşetmez. "Hep izin ver" yalnızca o projenin
   `.claude/settings.local.json` dosyasına kural ekler.

@@ -37,6 +37,34 @@ urun('Not Defteri', 'dist/index.html', html('Not Defteri'), simdi - 3 * gun);
 urun('Not Defteri', 'dist/NotDefteri-1.0.0-win-x64.zip', Buffer.alloc(18e6), simdi - 3 * gun - 2 * dk);
 urun('Kişisel Site', 'index.html', html('Kişisel Site'), simdi - 9 * gun);
 fs.mkdirSync(path.join(projeler, 'Ders Notları'), { recursive: true });
+// gezgin için kaynak dosyalar
+const kaynak = (goreli, icerik) => yaz(path.join(projeler, 'Hava Durumu', goreli), icerik);
+kaynak('src/ekranlar/ana.js', `// Ana ekran: bugünün havası ve 7 günlük tahmin.
+import { tahminGetir } from '../veri/tahmin.js';
+
+const GUN_ADLARI = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+
+/** Bir günün kartını çizer. */
+function gunKarti(gun) {
+  const kart = document.createElement('div');
+  kart.className = 'gun';
+  kart.textContent = \`\${GUN_ADLARI[new Date(gun.tarih).getDay()]} \${gun.enYuksek}° / \${gun.enDusuk}°\`;
+  return kart;
+}
+
+export async function anaEkran(kok) {
+  const veri = await tahminGetir({ sehir: 'İstanbul', gun: 7 });
+  gosterBugun(veri);
+  gosterHafta(veri.gunluk.slice(0, 7));
+  if (veri.uyari) kok.prepend(uyariSeridi(veri.uyari)); /* fırtına, kar vb. */
+  return true;
+}
+`);
+kaynak('src/veri/tahmin.js', 'export async function tahminGetir({ sehir, gun }) {\n  const r = await fetch(`/api/tahmin?sehir=${encodeURIComponent(sehir)}&gun=${gun}`);\n  return r.json();\n}\n');
+kaynak('src/stil.css', '.gun { display: flex; gap: 8px; padding: 12px; border-radius: 12px; background: #eef4ff; }\n');
+kaynak('README.md', '# Hava Durumu\n\nAndroid ve Windows için **7 günlük** hava tahmini.\n\n- `npm run build:android` → `dist/*.apk`\n');
+kaynak('package.json', '{\n  "name": "hava-durumu",\n  "version": "1.3.0",\n  "private": true\n}\n');
+kaynak('derle.ps1', '# APK ve kurulum dosyasını üretir\n$surum = (Get-Content package.json | ConvertFrom-Json).version\nnpm run build:android\nWrite-Host "Sürüm $surum hazır"\n');
 
 // ── tanıtım sohbetleri (Claude Code transkript biçiminde) ──
 function sohbet(proje, baslik, adimlar) {
@@ -134,8 +162,34 @@ try {
   await s.click('details.gizlenen > summary');
   await bekle(300);
   await cek('telefon-tum-urunler');
-  await s.locator('.urun', { hasText: 'HavaDurumu-kurulum.exe' }).getByText('Göster', { exact: true }).click();
+  // İkinci ürünü de gizle: "Göster" ile biri geri alınınca kutu açık kalmalı, "Hepsini göster" kalanları alır.
+  await s.locator('.urun', { hasText: 'tanitim.mp4' }).getByText('Gizle', { exact: true }).click();
+  await s.waitForSelector('details.gizlenen[open] >> text=tanitim.mp4');
+  await s.locator('details.gizlenen .urun', { hasText: 'HavaDurumu-kurulum.exe' }).getByText('Göster', { exact: true }).click();
+  await s.waitForSelector('details.gizlenen > summary >> text=Gizlediklerin (1)'); // (waitForFunction CSP'ye takılır)
+  if (!(await s.$('details.gizlenen[open]'))) hatalar.push('"Göster"den sonra Gizlediklerin kutusu kapandı');
+  await s.getByText('Gizlenenleri göster (1)').click();
   await s.waitForSelector('details.gizlenen', { state: 'detached' });
+
+  // Telefonda dosya gezgini (çekmece) ve sola kaydırarak kapatma; sağa kaydırınca proje listesi.
+  const hava = (await (await s.request.get(`${K}/api/projeler`)).json()).projeler.find(p => p.ad === 'Hava Durumu').kimlik;
+  await s.goto(`${K}/#/p/${hava}/d/${encodeURIComponent('src/ekranlar/ana.js')}`);
+  await s.waitForSelector('.kod-gorunum .s-anahtar');
+  await s.click('.gezgin-dugme');
+  await s.waitForSelector('#gezgin .agac-satir.secili');
+  await bekle(300);
+  await cek('telefon-dosyalar');
+  const kaydir = async (x0, x1) => s.evaluate(([a, b]) => {
+    const t = (x, tur) => new TouchEvent(tur, { bubbles: true, touches: tur === 'touchend' ? [] : [new Touch({ identifier: 1, target: document.querySelector('#ana'), clientX: x, clientY: 400 })],
+      changedTouches: [new Touch({ identifier: 1, target: document.querySelector('#ana'), clientX: x, clientY: 400 })] });
+    const hedef = document.querySelector('#ana .ust');
+    hedef.dispatchEvent(t(a, 'touchstart')); hedef.dispatchEvent(t(b, 'touchend'));
+  }, [x0, x1]);
+  await kaydir(300, 80);
+  if (await s.$('#uyg.gezgin-cekmece')) hatalar.push('sola kaydırma gezgini kapatmadı');
+  await kaydir(60, 300);
+  if (!(await s.$('#uyg.yan-cekmece'))) hatalar.push('sağa kaydırma proje listesini açmadı');
+  await s.click('.perde', { position: { x: 380, y: 400 } });
 
   const masaustu = await tarayici.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark', locale: 'tr-TR', storageState: await telefon.storageState() });
   const m = await masaustu.newPage();
@@ -144,6 +198,28 @@ try {
   await m.waitForSelector('table');
   await bekle(500);
   const yol = path.join(CIKTI, 'masaustu-sohbet.png'); await m.screenshot({ path: yol }); kaydedilen.push(yol);
+
+  // Masaüstü: proje listesi kenarından daraltılır, gezgin açılır, dosya renklendirilmiş görünür.
+  await m.goto(`${K}/#/p/${hava}/d/${encodeURIComponent('src/ekranlar/ana.js')}`);
+  await m.waitForSelector('.kod-gorunum .s-anahtar');
+  if (!(await m.$('#uyg.gezgin-acik'))) await m.click('.gezgin-dugme');
+  await m.waitForSelector('#gezgin .agac-satir.secili');
+  const tut = await m.$('#yan .tutamac');
+  const kutu = await tut.boundingBox();
+  await m.mouse.move(kutu.x + 4, 300); await m.mouse.down(); await m.mouse.move(250, 300, { steps: 5 }); await m.mouse.up();
+  const gen = await m.evaluate(() => document.querySelector('#yan').getBoundingClientRect().width);
+  if (Math.abs(gen - 250) > 6) hatalar.push(`sürükleyince sol bar 250 px olmadı (${gen})`);
+  await bekle(300);
+  const yol2 = path.join(CIKTI, 'masaustu-dosyalar.png'); await m.screenshot({ path: yol2 }); kaydedilen.push(yol2);
+  await m.mouse.move(250, 300); await m.mouse.down(); await m.mouse.move(40, 300, { steps: 5 }); await m.mouse.up();
+  if (!(await m.$('#uyg.yan-kapali'))) hatalar.push('eşiğin altına sürükleyince sol bar kapanmadı');
+  await m.click('.yan-dugme');
+  if (await m.$('#uyg.yan-kapali')) hatalar.push('☰ sol barı açmadı');
+  await m.keyboard.press('Control+b');
+  if (!(await m.$('#uyg.yan-kapali'))) hatalar.push('Ctrl+B sol barı kapatmadı');
+  await m.keyboard.press('Control+b');
+  await m.goto(`${K}/#/p/${hava}/d/README.md`);
+  await m.waitForSelector('.md-onizleme h1');
 
   if (hatalar.length) { console.error('Sayfa hataları:\n' + hatalar.join('\n')); process.exitCode = 1; }
 } finally {

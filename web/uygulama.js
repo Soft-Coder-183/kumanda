@@ -175,24 +175,54 @@ function urunKarti(pid, u, yenile) {
       e.not && h('span', { class: 'rozet uyari' }, e.not),
       u.ikincil && h('span', { class: 'rozet' }, u.ikincil),
       h('span', { class: 'bos' }),
-      h('button', { class: 'dugme duz kucuk', title: u.gizli ? 'Yeniden göster' : 'Listeden gizle', onclick: async () => {
-        try { await api(`/api/proje/${pid}/urun-gizle`, { yol: u.yol, gizli: !u.gizli }); yenile(); } catch (x) { bildir(x.message); }
+      h('button', { class: 'dugme duz kucuk', title: u.gizli ? 'Yeniden göster' : 'Listeden gizle', onclick: async e => {
+        const b = e.currentTarget; // await'ten sonra currentTarget boşalır
+        b.disabled = true; // seri basışta aynı karta iki kez gitmesin
+        try { await api(`/api/proje/${pid}/urun-gizle`, { yol: u.yol, gizli: !u.gizli }); yenile(); } catch (x) { bildir(x.message); b.disabled = false; }
       } }, u.gizli ? 'Göster' : 'Gizle'),
       h('a', { class: `dugme kucuk${e.uyumlu ? ' ana' : ''}`, href: adres, target: '_blank', rel: 'noopener' }, e.ad)));
 }
 
-function urunIzgarasi(pid, urunler, yenile) {
+// Açık bırakılan "Diğer dosyalar" / "Gizlediklerin" kutuları: liste yeniden çizilince (ör. "Göster"den sonra) kapanmasınlar.
+const acikKutular = new Set();
+
+/** Birden çok ürünü tek istekle gösterir/gizler. */
+async function topluGizle(pid, yollar, gizli, yenile, dugme) {
+  if (dugme) dugme.disabled = true;
+  try { await api(`/api/proje/${pid}/urun-gizle`, { yollar, gizli }); yenile(); }
+  catch (x) { bildir(x.message); if (dugme) dugme.disabled = false; }
+}
+const hepsiniGosterDugmesi = (pid, gizliler, yenile, metin = `Hepsini göster (${gizliler.length})`) =>
+  h('button', { class: 'dugme kucuk', type: 'button', title: 'Gizlenen ürünlerin hepsini yeniden listeye al',
+    onclick: e => topluGizle(pid, gizliler.map(u => u.yol), false, yenile, e.currentTarget) }, metin);
+
+/** `anahtar`: kutuların açık/kapalı durumunun hatırlandığı ad (aynı sayfada her grup için ayrı). */
+function urunIzgarasi(pid, urunler, yenile, anahtar = pid) {
   const asil = urunler.filter(u => !u.ikincil && !u.gizli);
   const ikincil = urunler.filter(u => u.ikincil && !u.gizli);
   const gizli = urunler.filter(u => u.gizli);
-  const kutu = (ozet, liste, sinif) => liste.length ? h('details', { class: `diger ${sinif}` },
-    h('summary', {}, ozet), h('div', { class: 'urunler' }, liste.map(u => urunKarti(pid, u, yenile)))) : null;
+  const kutu = (ozet, liste, sinif, ust) => {
+    if (!liste.length) return null;
+    const k = `${anahtar}|${sinif}`;
+    const d = h('details', { class: `diger ${sinif}`, open: acikKutular.has(k), ontoggle: () => (d.open ? acikKutular.add(k) : acikKutular.delete(k)) },
+      h('summary', {}, ozet), ust, h('div', { class: 'urunler' }, liste.map(u => urunKarti(pid, u, yenile))));
+    return d;
+  };
   // Her zaman yalnızca DOM öğelerinden oluşan bir dizi döner (replaceChildren'e yayılarak verilir).
   return [
     asil.length ? h('div', { class: 'urunler' }, asil.map(u => urunKarti(pid, u, yenile))) : null,
     kutu(`Diğer dosyalar (${ikincil.length}): kopyalar, eski sürümler, kaynak dosyaları`, ikincil, 'ikincil'),
-    kutu(`Gizlediklerin (${gizli.length}): "Göster" ile geri gelir`, gizli, 'gizlenen'),
+    kutu(`Gizlediklerin (${gizli.length}): "Göster" ile geri gelir`, gizli, 'gizlenen',
+      gizli.length > 1 && h('div', { class: 'kutu-arac' }, hepsiniGosterDugmesi(pid, gizli, yenile))),
   ].filter(Boolean);
+}
+
+/** Yeniden çizerken kaydırma yerini korur (liste değişse de okuduğun yerde kalırsın). */
+function yerindeCiz(kap, ...dugumler) {
+  const kaydir = kap.closest?.('.kaydir');
+  const yer = kaydir?.scrollTop;
+  kap.replaceChildren(...dugumler);
+  if (kaydir && yer) kaydir.scrollTop = yer;
 }
 
 /** Ürünleri, onları üreten sohbete göre gruplar: en son ürün çıkaran sohbet üstte, hiçbir sohbete bağlanamayanlar en altta. */
@@ -213,7 +243,7 @@ function oturumGruplari(pid, urunler, oturumlar, yenile) {
       : h('div', { class: 'oturum-bas' },
         h('span', { class: 'ad' }, 'Bir sohbete bağlanamayanlar'),
         h('span', { class: 'sonuk kucuk' }, 'Claude Code dışında ya da çok önce değişmiş dosyalar')),
-    urunIzgarasi(pid, liste, yenile)));
+    urunIzgarasi(pid, liste, yenile, `${pid}|${sid || '-'}`)));
 }
 
 // ───────── giriş / ilk kurulum ─────────
@@ -254,21 +284,215 @@ function girisGoster() {
 // ───────── iskelet ve yönlendirme ─────────
 let projeler = [];
 let aktif = null; // etkin görünüm (kapat() ile temizlenir)
-let yan, ana, listeEl, aramaEl;
+let yan, ana, listeEl, aramaEl, gezgin, agacEl, gezginAdEl;
+
+// ───────── düzen: sol bar (projeler) ve gezgin (dosyalar) ─────────
+// Masaüstünde ikisi de kenarından sürüklenerek genişler/daralır; eşiğin altına sürüklenince kapanır. ☰ ve Dosyalar
+// düğmeleri (Ctrl+B, Ctrl+Shift+E) açıp kapatır. Telefonda ikisi de soldan açılan çekmecedir: sağa kaydır → projeler,
+// sola kaydır ya da dışına dokun → kapanır.
+const masaustu = () => matchMedia('(min-width: 900px)').matches;
+const KAPANMA_ESIGI = 150, EN_DAR = 190;
+const duzen = { yanGen: 300, yanKapali: false, gezginGen: 270, gezginAcik: false };
+try { Object.assign(duzen, JSON.parse(localStorage.getItem('kumanda.duzen')) || {}); } catch { /* bozuk ya da yok */ }
+const duzenKaydet = () => { try { localStorage.setItem('kumanda.duzen', JSON.stringify(duzen)); } catch { /* özel pencere */ } };
+let gezginPid = null; // gezginin gösterdiği proje (yalnızca proje sayfalarında)
+
+function duzenUygula() {
+  const enGenis = Math.max(260, Math.round(innerWidth * 0.5));
+  duzen.yanGen = Math.min(Math.max(duzen.yanGen, EN_DAR), enGenis);
+  duzen.gezginGen = Math.min(Math.max(duzen.gezginGen, EN_DAR), enGenis);
+  const gezginGorunur = duzen.gezginAcik && Boolean(gezginPid);
+  uyg.classList.toggle('yan-kapali', duzen.yanKapali);
+  uyg.classList.toggle('gezgin-acik', gezginGorunur);
+  if (!gezginPid) uyg.classList.remove('gezgin-cekmece');
+  uyg.style.setProperty('--yan-gen', duzen.yanKapali ? '0px' : `${duzen.yanGen}px`);
+  uyg.style.setProperty('--gezgin-gen', gezginGorunur ? `${duzen.gezginGen}px` : '0px');
+  for (const d of document.querySelectorAll('.gezgin-dugme')) d.classList.toggle('etkin', gezginGorunur || uyg.classList.contains('gezgin-cekmece'));
+}
+
+function cekmeceleriKapat() { uyg.classList.remove('yan-cekmece', 'gezgin-cekmece'); duzenUygula(); }
+
+function yanDegistir() {
+  if (masaustu()) { duzen.yanKapali = !duzen.yanKapali; duzenKaydet(); duzenUygula(); return; }
+  const ac = !uyg.classList.contains('yan-cekmece');
+  cekmeceleriKapat();
+  if (ac && uyg.classList.contains('ana-acik')) uyg.classList.add('yan-cekmece');
+}
+
+function gezginDegistir() {
+  if (!gezginPid) return;
+  if (masaustu()) { duzen.gezginAcik = !duzen.gezginAcik; duzenKaydet(); }
+  else {
+    const ac = !uyg.classList.contains('gezgin-cekmece');
+    uyg.classList.remove('yan-cekmece');
+    uyg.classList.toggle('gezgin-cekmece', ac);
+  }
+  if (gezginGorunur()) agacTazele(); // her açılışta güncel klasör içeriği
+  duzenUygula();
+}
+
+/** Kenar tutamacı: sürükleyerek genişlik ayarlar, eşiğin altında paneli kapatır. */
+function tutamac(sinif, { baslangic, ayarla }) {
+  return h('div', { class: sinif, role: 'separator', 'aria-orientation': 'vertical', title: 'Sürükle: genişlet / daralt / kapat',
+    onpointerdown: e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const x0 = e.clientX, g0 = baslangic();
+      uyg.classList.add('surukleniyor');
+      const hareket = ev => { ayarla(g0 + ev.clientX - x0); duzenUygula(); };
+      const birak = () => {
+        uyg.classList.remove('surukleniyor');
+        removeEventListener('pointermove', hareket); removeEventListener('pointerup', birak); removeEventListener('pointercancel', birak);
+        duzenKaydet();
+      };
+      addEventListener('pointermove', hareket); addEventListener('pointerup', birak); addEventListener('pointercancel', birak);
+    } });
+}
 
 function iskelet() {
   uyg.className = '';
   aramaEl = h('input', { type: 'search', placeholder: 'Proje ara', 'aria-label': 'Proje ara', oninput: projeleriCiz });
   listeEl = h('div', { class: 'liste' });
+  const yanAyarla = g => { duzen.yanKapali = g < KAPANMA_ESIGI; if (!duzen.yanKapali) duzen.yanGen = g; };
   yan = h('aside', { id: 'yan' },
     h('div', { class: 'ust' },
       h('div', { class: 'baslik' }, h('h1', {}, 'Kumanda')),
       h('a', { class: 'dugme kucuk', href: '#/urunler' }, 'Ürünler'),
-      h('a', { class: 'dugme simge duz', href: '#/ayarlar', title: 'Ayarlar', 'aria-label': 'Ayarlar' }, '⚙')),
+      h('a', { class: 'dugme simge duz', href: '#/ayarlar', title: 'Ayarlar', 'aria-label': 'Ayarlar' }, '⚙'),
+      h('button', { class: 'dugme simge duz yan-kapat', type: 'button', title: 'Proje listesini kapat (Ctrl+B)', 'aria-label': 'Proje listesini kapat', onclick: yanDegistir }, '«')),
     h('div', { class: 'ara' }, aramaEl),
-    h('div', { class: 'kaydir' }, listeEl));
+    h('div', { class: 'kaydir' }, listeEl),
+    tutamac('tutamac', { baslangic: () => duzen.yanGen, ayarla: yanAyarla }));
+  agacEl = h('div', { class: 'agac', role: 'tree', 'aria-label': 'Proje dosyaları' });
+  gezginAdEl = h('div', { class: 'gezgin-ad' });
+  gezgin = h('aside', { id: 'gezgin' },
+    h('div', { class: 'gezgin-bas' },
+      h('div', { class: 'gezgin-baslik' }, h('div', { class: 'etiket' }, 'Dosyalar'), gezginAdEl),
+      h('button', { class: 'dugme simge duz kucuk', type: 'button', title: 'Yenile', 'aria-label': 'Dosyaları yenile', onclick: agacTazele }, '⟳'),
+      h('button', { class: 'dugme simge duz kucuk', type: 'button', title: 'Klasörlerin hepsini daralt', 'aria-label': 'Hepsini daralt', onclick: () => { acikKlasorler.delete(gezginPid); agacCiz(); } }, '⊟'),
+      h('button', { class: 'dugme simge duz kucuk', type: 'button', title: 'Kapat (Ctrl+Shift+E)', 'aria-label': 'Dosyaları kapat', onclick: gezginDegistir }, '×')),
+    h('div', { class: 'kaydir' }, agacEl),
+    tutamac('tutamac', { baslangic: () => duzen.gezginGen, ayarla: g => { duzen.gezginAcik = g >= KAPANMA_ESIGI; if (duzen.gezginAcik) duzen.gezginGen = g; } }));
   ana = h('main', { id: 'ana' });
-  uyg.replaceChildren(yan, ana);
+  // Kapalı sol bar, ekranın sol kenarından sürüklenerek yeniden açılır.
+  const kenar = tutamac('kenar-tutamac', { baslangic: () => 0, ayarla: yanAyarla });
+  uyg.replaceChildren(yan, gezgin, ana, kenar, h('div', { class: 'perde', onclick: cekmeceleriKapat }));
+  duzenUygula();
+  dokunmaKaydirmasi();
+}
+
+/** Telefonda yatay kaydırma: sağa → proje listesi çekmecesi, sola → açık çekmeceyi kapat. */
+function dokunmaKaydirmasi() {
+  let bas = null;
+  const yatayKayar = el => {
+    for (; el && el !== uyg && el.nodeType === 1; el = el.parentElement) {
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+      if (el.scrollWidth > el.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true;
+    }
+    return false;
+  };
+  uyg.addEventListener('touchstart', e => {
+    bas = e.touches.length === 1 && !masaustu() ? { x: e.touches[0].clientX, y: e.touches[0].clientY, hedef: e.target } : null;
+  }, { passive: true });
+  uyg.addEventListener('touchend', e => {
+    if (!bas) return;
+    const t = e.changedTouches[0], dx = t.clientX - bas.x, dy = t.clientY - bas.y, hedef = bas.hedef;
+    bas = null;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8 || yatayKayar(hedef)) return;
+    const cekmece = uyg.classList.contains('yan-cekmece') || uyg.classList.contains('gezgin-cekmece');
+    if (dx < 0 && cekmece) cekmeceleriKapat();
+    else if (dx > 0 && !cekmece && uyg.classList.contains('ana-acik')) uyg.classList.add('yan-cekmece');
+  }, { passive: true });
+}
+
+// ───────── gezgin: proje dosyaları (VS Code'un gezgini gibi; yalnızca okuma) ─────────
+const agacOnbellek = new Map(); // `${pid}|${klasör}` → { girdiler, kesildi } | { yukleniyor } | { hata }
+const acikKlasorler = new Map(); // pid → Set(klasör yolu)
+let seciliDosya = '';
+const gezginGorunur = () => Boolean(gezginPid) && (masaustu() ? duzen.gezginAcik : uyg.classList.contains('gezgin-cekmece'));
+const dosyaAdresi = (pid, yol) => `#/p/${pid}/d/${encodeURIComponent(yol)}`;
+
+const SIMGE = [
+  [/\.(m?jsx?|cjs)$/i, 'JS', 'sari'], [/\.(tsx?|mts|cts)$/i, 'TS', 'mavi'], [/\.(json|jsonc|webmanifest)$/i, '{}', 'sari'],
+  [/\.(html?|xml|vue|svelte)$/i, '<>', 'turuncu'], [/\.(css|scss|sass|less)$/i, '#', 'mavi'], [/\.(md|markdown)$/i, 'M↓', 'mavi'],
+  [/\.(py|pyw|ipynb)$/i, 'PY', 'mavi'], [/\.(ps1|psm1|psd1)$/i, 'PS', 'mavi'], [/\.(sh|bash|zsh|bat|cmd)$/i, '$', 'yesil'],
+  [/\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)$/i, '▣', 'mor'], [/\.(apk|aab)$/i, 'AP', 'yesil'], [/\.(exe|msi|dll)$/i, 'EX', 'kirmizi'],
+  [/\.(zip|7z|rar|gz|tgz)$/i, 'ZP', 'turuncu'], [/\.(ya?ml|toml|ini|cfg|conf|env|properties|gradle|kts)$/i, '⚙', 'soluk'],
+  [/\.(c|h|cpp|hpp|cc|cs|java|kt|go|rs|swift|dart|php|rb|lua|sql)$/i, '</>', 'mor'], [/\.(mp4|mov|webm|mkv|mp3|wav)$/i, '▶', 'mor'],
+  [/\.(txt|log|csv)$/i, '≡', 'soluk'], [/\.pdf$/i, 'PDF', 'kirmizi'],
+];
+function dosyaSimgesi(ad) {
+  const s = SIMGE.find(([r]) => r.test(ad));
+  return h('span', { class: `dsimge ${s ? s[2] : 'soluk'}`, 'aria-hidden': 'true' }, s ? s[1] : '•');
+}
+
+async function klasorYukle(pid, yol) {
+  const k = `${pid}|${yol}`;
+  if (agacOnbellek.get(k)?.yukleniyor) return;
+  agacOnbellek.set(k, { yukleniyor: true });
+  try {
+    const v = await api(`/api/proje/${pid}/dosyalar?yol=${encodeURIComponent(yol)}`);
+    agacOnbellek.set(k, { girdiler: v.girdiler || [], kesildi: Boolean(v.kesildi) });
+  } catch (x) { agacOnbellek.set(k, { hata: x.kod === 404 ? 'Klasör bulunamadı' : x.message }); }
+  if (pid === gezginPid) agacCiz();
+}
+
+function agacTazele() {
+  if (!gezginPid) return;
+  for (const k of [...agacOnbellek.keys()]) if (k.startsWith(`${gezginPid}|`) && !agacOnbellek.get(k).yukleniyor) agacOnbellek.delete(k);
+  agacCiz();
+}
+
+function klasorDegistir(yol) {
+  if (!acikKlasorler.has(gezginPid)) acikKlasorler.set(gezginPid, new Set());
+  const acik = acikKlasorler.get(gezginPid);
+  if (acik.has(yol)) acik.delete(yol); else acik.add(yol);
+  agacCiz();
+}
+
+function agacCiz() {
+  if (!agacEl) return;
+  if (!gezginPid) { agacEl.replaceChildren(); return; }
+  const pid = gezginPid;
+  gezginAdEl.textContent = projeAdi(pid) || 'Proje';
+  if (!gezginGorunur()) return; // kapalıyken ağ isteği yapma
+  const acik = acikKlasorler.get(pid) || new Set();
+  const satirlar = [];
+  const bilgi = (metin, d) => h('div', { class: 'agac-bilgi', style: `padding-left:${26 + d * 14}px` }, metin);
+  const gez = (klasor, d) => {
+    const k = agacOnbellek.get(`${pid}|${klasor}`);
+    if (!k) { klasorYukle(pid, klasor); satirlar.push(bilgi('Yükleniyor…', d)); return; }
+    if (k.yukleniyor) { satirlar.push(bilgi('Yükleniyor…', d)); return; }
+    if (k.hata) { satirlar.push(bilgi(k.hata, d)); return; }
+    if (!k.girdiler.length) satirlar.push(bilgi(d ? 'boş' : 'Bu klasör boş', d));
+    for (const g of k.girdiler) {
+      const ac = g.klasor && acik.has(g.yol);
+      const ortak = { class: `agac-satir${g.klasor ? ' klasor' : ''}${!g.klasor && g.yol === seciliDosya ? ' secili' : ''}`,
+        style: `padding-left:${6 + d * 14}px`, title: g.yol, role: 'treeitem' };
+      satirlar.push(g.klasor
+        ? h('button', { ...ortak, type: 'button', 'aria-expanded': ac ? 'true' : 'false', onclick: () => klasorDegistir(g.yol) },
+          h('span', { class: 'ok' }, ac ? '▾' : '▸'), h('span', { class: 'ad' }, g.ad))
+        : h('a', { ...ortak, href: dosyaAdresi(pid, g.yol) },
+          h('span', { class: 'ok' }), dosyaSimgesi(g.ad), h('span', { class: 'ad' }, g.ad)));
+      if (ac) gez(g.yol, d + 1);
+    }
+    if (k.kesildi) satirlar.push(bilgi('… çok fazla girdi; ilk 3000 gösteriliyor', d));
+  };
+  gez('', 0);
+  agacEl.replaceChildren(...satirlar);
+}
+
+/** Yönlendirmede çağrılır: gezginin projesi ve seçili dosya (dosyanın klasörleri açılır, VS Code'daki gibi). */
+function gezginAyarla(pid, dosya) {
+  gezginPid = pid;
+  seciliDosya = dosya || '';
+  if (pid && dosya) {
+    if (!acikKlasorler.has(pid)) acikKlasorler.set(pid, new Set());
+    const parcalar = dosya.split('/');
+    for (let i = 1; i < parcalar.length; i++) acikKlasorler.get(pid).add(parcalar.slice(0, i).join('/'));
+  }
+  duzenUygula();
+  agacCiz();
 }
 
 async function projeleriYenile() {
@@ -288,15 +512,20 @@ function projeleriCiz() {
       h('div', { class: 'govde' }, h('div', { class: 'ad' }, p.ad), h('div', { class: 'bilgi' }, bilgi)));
   }));
   if (!gorunen.length) listeEl.append(h('div', { class: 'bos-durum' }, ara ? 'Eşleşen proje yok' : 'Proje bulunamadı'));
+  if (gezginPid) gezginAdEl.textContent = projeAdi(gezginPid) || 'Proje';
 }
 
 const projeAdi = pid => projeler.find(p => p.kimlik === pid)?.ad || '';
 
-function ustCubuk({ baslik, alt, geri = '#/', sag = [] }) {
+/** `pid` verilirse sağda gezgin (Dosyalar) düğmesi olur. */
+function ustCubuk({ baslik, alt, geri = '#/', sag = [], pid }) {
   return h('div', { class: 'ust' },
     h('a', { class: 'dugme simge duz geri', href: geri, 'aria-label': 'Geri' }, '‹'),
+    h('button', { class: 'dugme simge duz yan-dugme', type: 'button', title: 'Proje listesi (Ctrl+B)', 'aria-label': 'Proje listesini aç/kapat', onclick: yanDegistir }, '☰'),
     h('div', { class: 'baslik' }, typeof baslik === 'string' ? h('h1', {}, baslik) : baslik, alt && (typeof alt === 'string' ? h('div', { class: 'alt' }, alt) : alt)),
-    sag);
+    sag,
+    pid && h('button', { class: `dugme simge duz gezgin-dugme${gezginGorunur() ? ' etkin' : ''}`, type: 'button', title: 'Proje dosyaları (Ctrl+Shift+E)',
+      'aria-label': 'Proje dosyalarını aç/kapat', onclick: gezginDegistir }, h('span', { class: 'klasor-simge', 'aria-hidden': 'true' })));
 }
 
 function yonlendir() {
@@ -304,9 +533,14 @@ function yonlendir() {
   aktif = null;
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   uyg.classList.toggle('ana-acik', p.length > 0);
+  uyg.classList.remove('yan-cekmece', 'gezgin-cekmece'); // telefonda çekmeceden seçim yapıldı: kapansın
+  let dosya = '';
+  if (p[0] === 'p' && p[1] && p[2] === 'd') { try { dosya = decodeURIComponent(p.slice(3).join('/')); } catch { dosya = ''; } }
+  gezginAyarla(p[0] === 'p' && p[1] ? p[1] : null, dosya);
   if (p[0] === 'p' && p[1]) {
     if (p[2] === 's' && p[3]) aktif = sohbetGorunumu(p[1], p[3]);
     else if (p[2] === 'yeni') aktif = sohbetGorunumu(p[1], null);
+    else if (p[2] === 'd' && dosya) aktif = dosyaGorunumu(p[1], dosya);
     else aktif = projeSayfasi(p[1], p[2] === 'urunler' ? 'urunler' : 'sohbetler');
   } else if (p[0] === 'urunler') aktif = tumUrunler();
   else if (p[0] === 'ayarlar') aktif = ayarlarSayfasi();
@@ -320,7 +554,7 @@ function projeSayfasi(pid, sekme) {
   const baslik = h('h1', {}, projeAdi(pid) || 'Proje');
   const alt = h('div', { class: 'alt' });
   ana.replaceChildren(
-    ustCubuk({ baslik, alt, sag: [h('a', { class: 'dugme ana kucuk', href: `#/p/${pid}/yeni` }, 'Yeni sohbet')] }),
+    ustCubuk({ baslik, alt, pid, sag: [h('a', { class: 'dugme ana kucuk', href: `#/p/${pid}/yeni` }, 'Yeni sohbet')] }),
     h('div', { class: 'sekmeler' },
       h('a', { class: `sekme${sekme === 'sohbetler' ? ' secili' : ''}`, href: `#/p/${pid}` }, 'Sohbetler'),
       h('a', { class: `sekme${sekme === 'urunler' ? ' secili' : ''}`, href: `#/p/${pid}/urunler` }, 'Ürünler')),
@@ -347,9 +581,11 @@ function projeSayfasi(pid, sekme) {
       } else {
         const v = await api(`/api/proje/${pid}/urunler?gizliler${taze ? '&taze' : ''}`);
         if (iptal) return;
-        govde.replaceChildren(
-          h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:12px' },
+        const gizliler = v.urunler.filter(u => u.gizli);
+        yerindeCiz(govde,
+          h('div', { class: 'arac-cubugu' },
             h('span', { class: 'sonuk kucuk', style: 'flex:1' }, v.urunler.length ? 'Her ürün, onu son değiştiren sohbetin altında' : ''),
+            gizliler.length > 0 && hepsiniGosterDugmesi(pid, gizliler, () => yukle(false), `Gizlenenlerin hepsini göster (${gizliler.length})`),
             h('button', { class: 'dugme kucuk', onclick: () => yukle(true) }, 'Yeniden tara')),
           ...(v.urunler.length ? oturumGruplari(pid, v.urunler, v.oturumlar || {}, () => yukle(false))
             : [h('div', { class: 'bos-durum' }, 'Bu projede ürün bulunamadı (HTML, APK, EXE, ZIP, video, belge).')]));
@@ -370,13 +606,162 @@ function tumUrunler() {
       const v = await api('/api/urunler?gizliler');
       if (iptal) return;
       // Proje başlığı altında, projenin Ürünler sekmesindeki gibi sohbetlere ayrılmış.
-      govde.replaceChildren(...(v.gruplar.length ? v.gruplar.map(g => h('section', { class: 'proje-grubu' },
-        h('h2', {}, h('a', { href: `#/p/${g.proje.kimlik}/urunler`, style: 'color:inherit;text-decoration:none' }, `${g.proje.ad} ›`)),
+      yerindeCiz(govde, ...(v.gruplar.length ? v.gruplar.map(g => h('section', { class: 'proje-grubu' },
+        h('div', { class: 'proje-grubu-bas' },
+          h('h2', {}, h('a', { href: `#/p/${g.proje.kimlik}/urunler`, style: 'color:inherit;text-decoration:none' }, `${g.proje.ad} ›`)),
+          g.urunler.some(u => u.gizli) && hepsiniGosterDugmesi(g.proje.kimlik, g.urunler.filter(u => u.gizli), yukle, `Gizlenenleri göster (${g.urunler.filter(u => u.gizli).length})`)),
         oturumGruplari(g.proje.kimlik, g.urunler, g.oturumlar || {}, yukle)))
         : [h('div', { class: 'bos-durum' }, 'Hiçbir projede ürün bulunamadı.')]));
     } catch (x) { if (!iptal && x.kod !== 401) govde.replaceChildren(h('div', { class: 'bos-durum' }, x.message)); }
   }
   yukle();
+  return { kapat() { iptal = true; } };
+}
+
+// ───────── dosya görüntüleyici ─────────
+// Sözdizimi renklendirme: her dil için sıralı kurallar tek bir düzenli ifadede birleşir; eşleşen grup sınıfı verir.
+// Çıktı yalnızca h() ile kurulan <span>'lardır (metin hiçbir zaman HTML olarak yorumlanmaz).
+const KURAL = {
+  cYorum: /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/, blokYorum: /\/\*[\s\S]*?(?:\*\/|$)/, diyezYorum: /#[^\n]*/,
+  htmlYorum: /<!--[\s\S]*?(?:-->|$)/, psYorum: /<#[\s\S]*?(?:#>|$)/, sqlYorum: /--[^\n]*/, iniYorum: /(?:^|(?<=\n))[ \t]*;[^\n]*/,
+  batYorum: /(?:^|(?<=\n))[ \t]*(?:@?rem\b|::)[^\n]*/i,
+  dizgi: /"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?/, ciftDizgi: /"(?:[^"\\\n]|\\.)*"?/, sablon: /`(?:[^`\\]|\\[\s\S])*`?/,
+  ucluDizgi: /"""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$)/, ozDizgi: /(?<==\s*)(?:"[^"]*"|'[^']*')/,
+  jsonAnahtar: /"(?:[^"\\\n]|\\.)*"(?=\s*:)/, cssOzellik: /(?<=[{;]\s*)-{0,2}[a-zA-Z][\w-]*(?=\s*:)/, cssDeger: /#[\da-fA-F]{3,8}\b|@[\w-]+|!important/,
+  yamlAnahtar: /(?:^|(?<=\n))[ \t]*(?:- )?[\w.$-]+(?=[ \t]*:)/, iniAnahtar: /(?:^|(?<=\n))[ \t]*[\w.$-]+(?=[ \t]*=)/, iniBolum: /(?:^|(?<=\n))[ \t]*\[[^\]\n]*\]/,
+  etiket: /<\/?[A-Za-z][\w:.-]*|\/?>/, oznitelik: /[A-Za-z_:@][\w:.-]*(?==)/,
+  degisken: /\$\{?[\w:@#?*!-]+\}?/, batDegisken: /%[\w~:]+%?/, onIslemci: /(?:^|(?<=\n))[ \t]*#[ \t]*\w+/, susleyici: /@[\w.]+/,
+  sayi: /\b(?:0[xX][\da-fA-F_]+|\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/, kelime: /[A-Za-z_$][\w$]*/,
+  mdBaslik: /(?:^|(?<=\n))#{1,6} [^\n]*/, mdKod: /(?:^|(?<=\n))```[\s\S]*?(?:\n```|$)|`[^`\n]+`/, mdVurgu: /\*\*[^*\n]+\*\*|__[^_\n]+__/, mdBag: /\[[^\]\n]*\]\([^)\n]*\)/,
+};
+const kume = s => new Set(s.split(' '));
+const SOZ = {
+  js: kume('break case catch class const continue debugger default delete do else export extends finally for from function if import in instanceof let new of return static super switch this throw try typeof var void while with yield async await as interface type enum implements private protected public readonly declare namespace abstract keyof satisfies get set'),
+  py: kume('and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case self cls'),
+  ps: kume('begin break catch class continue data do dynamicparam else elseif end exit filter finally for foreach from function if in param process return switch throw trap try until using var while workflow'),
+  c: kume('auto break case char const continue default do double else enum extern float for goto if int long register return short signed sizeof static struct switch typedef union unsigned void volatile while class public private protected internal namespace using new delete virtual override template typename bool package import func go defer chan map range type var fn let mut impl trait pub use mod match loop where crate self Self val fun when object interface extends implements final abstract string async await this super throw throws try catch finally in is as out ref sealed data suspend'),
+  sh: kume('if then else elif fi for while until do done case esac in function return local export readonly set unset shift source exit'),
+  sql: kume('select from where and or not insert into values update set delete create table drop alter add index primary key foreign references join left right inner outer on group by order having limit offset as distinct union all null is in like between exists case when then else end default unique view'),
+  bat: kume('if else goto call set echo exit for in do not exist defined errorlevel setlocal endlocal shift pushd popd start'),
+};
+const SABITLER = kume('true false null undefined NaN Infinity None True False nil $true $false $null');
+const dil = (parcalar, soz = null, buyukKucuk = false) => ({
+  re: new RegExp(parcalar.map(([r]) => `(${r.source})`).join('|'), `g${parcalar.some(([r]) => r.flags.includes('i')) ? 'i' : ''}`),
+  siniflar: parcalar.map(([, s]) => s), soz, buyukKucuk,
+});
+const K = KURAL;
+const DILLER = {
+  js: dil([[K.cYorum, 'yorum'], [K.sablon, 'dizgi'], [K.dizgi, 'dizgi'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.js),
+  json: dil([[K.cYorum, 'yorum'], [K.jsonAnahtar, 'ozellik'], [K.ciftDizgi, 'dizgi'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], new Set()),
+  css: dil([[K.blokYorum, 'yorum'], [K.dizgi, 'dizgi'], [K.cssOzellik, 'ozellik'], [K.cssDeger, 'anahtar'], [K.sayi, 'sayi']]),
+  html: dil([[K.htmlYorum, 'yorum'], [K.etiket, 'etiket'], [K.oznitelik, 'ozellik'], [K.ozDizgi, 'dizgi']]),
+  py: dil([[K.diyezYorum, 'yorum'], [K.ucluDizgi, 'dizgi'], [K.dizgi, 'dizgi'], [K.susleyici, 'islev'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.py),
+  ps: dil([[K.psYorum, 'yorum'], [K.diyezYorum, 'yorum'], [K.dizgi, 'dizgi'], [K.degisken, 'degisken'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.ps, true),
+  sh: dil([[K.diyezYorum, 'yorum'], [K.dizgi, 'dizgi'], [K.degisken, 'degisken'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.sh),
+  bat: dil([[K.batYorum, 'yorum'], [K.ciftDizgi, 'dizgi'], [K.batDegisken, 'degisken'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.bat, true),
+  c: dil([[K.cYorum, 'yorum'], [K.onIslemci, 'anahtar'], [K.sablon, 'dizgi'], [K.dizgi, 'dizgi'], [K.susleyici, 'islev'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.c),
+  sql: dil([[K.sqlYorum, 'yorum'], [K.blokYorum, 'yorum'], [K.dizgi, 'dizgi'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], SOZ.sql, true),
+  yaml: dil([[K.diyezYorum, 'yorum'], [K.yamlAnahtar, 'ozellik'], [K.dizgi, 'dizgi'], [K.sayi, 'sayi'], [K.kelime, 'kelime']], new Set()),
+  ini: dil([[K.diyezYorum, 'yorum'], [K.iniYorum, 'yorum'], [K.iniBolum, 'etiket'], [K.iniAnahtar, 'ozellik'], [K.dizgi, 'dizgi'], [K.sayi, 'sayi']]),
+  md: dil([[K.htmlYorum, 'yorum'], [K.mdKod, 'dizgi'], [K.mdBaslik, 'anahtar'], [K.mdVurgu, 'tip'], [K.mdBag, 'islev']]),
+};
+const UZANTI_DIL = {
+  js: 'js', mjs: 'js', cjs: 'js', jsx: 'js', ts: 'js', tsx: 'js', mts: 'js', cts: 'js', json: 'json', jsonc: 'json', webmanifest: 'json',
+  css: 'css', scss: 'css', sass: 'css', less: 'css', html: 'html', htm: 'html', xml: 'html', svg: 'html', vue: 'html', svelte: 'html', xaml: 'html', csproj: 'html', plist: 'html',
+  py: 'py', pyw: 'py', ps1: 'ps', psm1: 'ps', psd1: 'ps', sh: 'sh', bash: 'sh', zsh: 'sh', bat: 'bat', cmd: 'bat',
+  c: 'c', h: 'c', cpp: 'c', hpp: 'c', cc: 'c', cs: 'c', java: 'c', kt: 'c', kts: 'c', go: 'c', rs: 'c', swift: 'c', dart: 'c', gradle: 'c', groovy: 'c', php: 'c', scala: 'c',
+  sql: 'sql', yml: 'yaml', yaml: 'yaml', toml: 'ini', ini: 'ini', cfg: 'ini', conf: 'ini', properties: 'ini', env: 'ini', md: 'md', markdown: 'md',
+};
+const dilBul = ad => (/^(makefile|dockerfile)$/i.test(ad) ? 'sh' : UZANTI_DIL[ad.toLowerCase().split('.').pop()] || null);
+const RENK_SINIRI = 400000; // bundan büyük metin renklendirilmeden gösterilir (telefonda donmasın)
+
+/** Metni satırlara böler; her satır [sınıf | null, parça] dizisidir. */
+function vurgula(metin, dilAdi) {
+  const satirlar = [[]];
+  const ekle = (sinif, parca) => parca.split('\n').forEach((x, i) => {
+    if (i) satirlar.push([]);
+    if (!x) return;
+    const satir = satirlar.at(-1), son = satir.at(-1);
+    if (son && son[0] === sinif) son[1] += x; else satir.push([sinif, x]);
+  });
+  const d = DILLER[dilAdi];
+  if (!d || metin.length > RENK_SINIRI) { ekle(null, metin); return satirlar; }
+  const re = d.re;
+  re.lastIndex = 0;
+  let son = 0, m;
+  while ((m = re.exec(metin))) {
+    if (!m[0]) { re.lastIndex++; continue; }
+    if (m.index > son) ekle(null, metin.slice(son, m.index));
+    let i = 1;
+    while (m[i] === undefined) i++;
+    let sinif = d.siniflar[i - 1];
+    if (sinif === 'kelime') {
+      const k = d.buyukKucuk ? m[0].toLowerCase() : m[0];
+      sinif = d.soz?.has(k) ? 'anahtar' : SABITLER.has(m[0]) || SABITLER.has(k) ? 'sabit'
+        : /^\s*\(/.test(metin.slice(re.lastIndex, re.lastIndex + 12)) ? 'islev' : /^[A-Z][a-z]/.test(m[0]) && !d.buyukKucuk ? 'tip' : null;
+    }
+    ekle(sinif, m[0]);
+    son = re.lastIndex;
+  }
+  ekle(null, metin.slice(son));
+  return satirlar;
+}
+
+function kodGorunumu(metin, dilAdi) {
+  const satirlar = vurgula(metin, dilAdi);
+  if (satirlar.length > 1 && !satirlar.at(-1).length) satirlar.pop(); // sondaki satır sonu boş satır sayılmasın
+  return h('pre', { class: 'kod-gorunum', style: `--hane:${String(satirlar.length).length}` },
+    satirlar.map(s => h('span', { class: 'ks' }, s.map(([sinif, parca]) => (sinif ? h('span', { class: `s-${sinif}` }, parca) : parca)))));
+}
+
+function dosyaGorunumu(pid, yol) {
+  const ad = yol.split('/').pop();
+  const govde = h('div', { class: 'dosya-govde' }, h('div', { class: 'bos-durum' }, 'Yükleniyor…'));
+  const bilgiEl = h('div', { class: 'dosya-cubugu' });
+  const ac = `/ac?p=${pid}&y=${encodeURIComponent(yol)}`;
+  ana.replaceChildren(
+    ustCubuk({ baslik: ad, alt: [projeAdi(pid), ...yol.split('/').slice(0, -1)].filter(Boolean).join(' › '), geri: `#/p/${pid}`, pid,
+      sag: [h('a', { class: 'dugme kucuk', href: ac, target: '_blank', rel: 'noopener', title: 'Tarayıcıda ayrı sekmede aç (ürün olarak)' }, 'Aç'),
+        h('a', { class: 'dugme kucuk', href: `${ac}&indir=1`, target: '_blank', rel: 'noopener', title: 'Bu cihaza indir' }, 'İndir')] }),
+    bilgiEl, h('div', { class: 'kaydir' }, govde));
+  let iptal = false;
+  let sar = localStorage.getItem('kumanda.satirSar') === '1';
+
+  (async () => {
+    let v;
+    try { v = await api(`/api/proje/${pid}/dosya?yol=${encodeURIComponent(yol)}`); }
+    catch (x) { if (!iptal && x.kod !== 401) govde.replaceChildren(h('div', { class: 'bos-durum' }, x.kod === 404 ? 'Dosya bulunamadı (silinmiş ya da gizli bir klasörde olabilir).' : x.message)); return; }
+    if (iptal) return;
+    const rozetler = [h('span', { class: 'rozet' }, boyutYaz(v.boyut)), h('span', { class: 'rozet' }, goreliZaman(v.zaman))];
+    if (v.tur === 'resim') {
+      bilgiEl.replaceChildren(...rozetler);
+      govde.replaceChildren(h('div', { class: 'dosya-resim' }, h('img', { src: `data:${v.mime};base64,${v.veri}`, alt: v.ad })));
+      return;
+    }
+    if (v.tur !== 'metin') {
+      bilgiEl.replaceChildren(...rozetler);
+      govde.replaceChildren(h('div', { class: 'bos-durum' }, `${v.neden || 'Bu dosya metin değil'}; burada gösterilemiyor. "Aç" ya da "İndir" ile kullanabilirsin.`));
+      return;
+    }
+    const dilAdi = dilBul(v.ad);
+    const markdown = dilAdi === 'md';
+    let onizleme = markdown;
+    const icerik = h('div', {});
+    const ciz = () => {
+      icerik.replaceChildren(onizleme ? h('div', { class: 'ileti claude md-onizleme', html: md(v.metin) }) : kodGorunumu(v.metin, dilAdi));
+      icerik.classList.toggle('sar', sar);
+    };
+    const secim = (etiket, acik, degis) => h('button', { class: `dugme duz kucuk${acik() ? ' etkin' : ''}`, type: 'button', 'aria-pressed': acik() ? 'true' : 'false',
+      onclick: e => { degis(); e.currentTarget.classList.toggle('etkin', acik()); e.currentTarget.setAttribute('aria-pressed', acik() ? 'true' : 'false'); ciz(); } }, etiket);
+    const satirSayisi = v.metin ? v.metin.split('\n').length - (v.metin.endsWith('\n') ? 1 : 0) : 0;
+    bilgiEl.replaceChildren(...[...rozetler, h('span', { class: 'rozet' }, `${satirSayisi} satır`),
+      v.kesildi && h('span', { class: 'rozet uyari' }, 'ilk 1 MB gösteriliyor'),
+      h('span', { class: 'bos' }),
+      markdown && secim('Önizleme', () => onizleme, () => { onizleme = !onizleme; }),
+      secim('Satır kaydır', () => sar, () => { sar = !sar; try { localStorage.setItem('kumanda.satirSar', sar ? '1' : '0'); } catch { /* yok */ } })].filter(Boolean));
+    govde.replaceChildren(icerik);
+    ciz();
+  })();
   return { kapat() { iptal = true; } };
 }
 
@@ -468,14 +853,14 @@ function sohbetGorunumu(pid, sid) {
       if (kapandi) return;
       const acik = urunPanel.open;
       urunPanel.replaceChildren(h('summary', {}, `Bu sohbetin ürünleri (${v.urunler.length})`),
-        h('div', { class: 'sohbet-urunleri-ic' }, ...urunIzgarasi(pid, v.urunler, () => urunleriYukle(false))));
+        h('div', { class: 'sohbet-urunleri-ic' }, ...urunIzgarasi(pid, v.urunler, () => urunleriYukle(false), `${pid}|s:${sid}`)));
       urunPanel.open = acik;
       urunPanel.hidden = !v.urunler.length;
     } catch { /* ağ hatası: panel olduğu gibi kalsın */ }
   }
   const urunleriTazele = () => { clearTimeout(urunSayaci); urunSayaci = setTimeout(() => urunleriYukle(true), 1500); };
 
-  ana.replaceChildren(ustCubuk({ baslik: baslikEl, alt: projeAdi(pid), geri: `#/p/${pid}` }), urunPanel, kaydirEl, durumEl, form);
+  ana.replaceChildren(ustCubuk({ baslik: baslikEl, alt: projeAdi(pid), geri: `#/p/${pid}`, pid }), urunPanel, kaydirEl, durumEl, form);
 
   // ── görüntü ──
   const dipte = () => kaydirEl.scrollHeight - kaydirEl.scrollTop - kaydirEl.clientHeight < 120;
@@ -831,6 +1216,15 @@ async function baslat() {
   if (!durumBilgisi.kurulu || !durumBilgisi.giris) return girisGoster();
   iskelet();
   addEventListener('hashchange', yonlendir);
+  // VS Code kısayolları: Ctrl+B proje listesi, Ctrl+Shift+E dosyalar.
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const tus = String(e.key).toLowerCase();
+    if (tus === 'b' && !e.shiftKey) { e.preventDefault(); yanDegistir(); }
+    else if (tus === 'e' && e.shiftKey && gezginPid) { e.preventDefault(); gezginDegistir(); }
+  });
+  let boyutSayaci = 0;
+  addEventListener('resize', () => { clearTimeout(boyutSayaci); boyutSayaci = setTimeout(() => { duzenUygula(); agacCiz(); }, 150); });
   yonlendir();
   await projeleriYenile();
   setInterval(() => { if (!document.hidden) projeleriYenile(); }, 20000);

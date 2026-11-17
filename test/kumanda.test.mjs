@@ -149,6 +149,61 @@ test('ürünler: başlık okunur, eski sürüm ikincildir, bağımlılık/kaynak
   assert.equal((await iste(`/api/proje/${alfa}/urunler`)).j.urunler.length, 3);
   assert.equal((await iste(`/api/proje/${alfa}/urunler?gizliler`)).j.urunler.find(u => u.yol === 'site/index.html').gizli, true);
   await iste(`/api/proje/${alfa}/urun-gizle`, { govde: { yol: 'site/index.html', gizli: false } });
+  // Toplu: "Hepsini göster" tek istekle.
+  await iste(`/api/proje/${alfa}/urun-gizle`, { govde: { yollar: ['site/index.html', 'index.html'], gizli: true } });
+  assert.deepEqual((await iste(`/api/proje/${alfa}/urunler?gizliler`)).j.urunler.filter(u => u.gizli).map(u => u.yol).sort(), ['index.html', 'site/index.html']);
+  await iste(`/api/proje/${alfa}/urun-gizle`, { govde: { yollar: ['site/index.html', 'index.html'], gizli: false } });
+  assert.equal((await iste(`/api/proje/${alfa}/urunler`)).j.urunler.length, 4);
+  for (const govde of [{ yollar: 'x' }, { yollar: [] }, { yollar: [1] }, {}]) assert.equal((await iste(`/api/proje/${alfa}/urun-gizle`, { govde })).kod, 400);
+});
+
+test('dosya gezgini: klasör listesi ve dosya okuma yalnızca proje içinde, gizli girdiler kapalı', async () => {
+  const beta = (await iste('/api/projeler')).j.projeler.find(p => p.ad === 'Beta').kimlik;
+  const betaYol = path.join(projeler, 'Beta');
+  yazDosya(path.join(betaYol, 'src', 'a.js'), 'const a = 1;\n');
+  yazDosya(path.join(betaYol, 'resim.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  yazDosya(path.join(betaYol, 'cikti.txt'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('Türkçe çıktı', 'utf16le')]));
+  yazDosya(path.join(betaYol, 'veri.bin'), Buffer.from([1, 0, 2, 0]));
+  yazDosya(path.join(betaYol, '.env'), 'SIR=1');
+
+  const kok = await iste(`/api/proje/${alfa}/dosyalar`);
+  assert.equal(kok.kod, 200);
+  assert.match(kok.baslik.get('content-type'), /^application\/json/);
+  const adlar = kok.j.girdiler.map(g => g.ad);
+  assert.ok(!adlar.includes('.gizli'), 'gizli klasör listelenmez');
+  assert.ok(adlar.includes('node_modules') && adlar.includes('index.html'));
+  const ilkDosya = kok.j.girdiler.findIndex(g => !g.klasor);
+  assert.ok(kok.j.girdiler.slice(ilkDosya).every(g => !g.klasor), 'klasörler önce');
+  assert.deepEqual((await iste(`/api/proje/${alfa}/dosyalar?yol=site`)).j.girdiler.map(g => g.yol), ['site/index.html', 'site/varlik.js']);
+
+  const js = await iste(`/api/proje/${alfa}/dosya?yol=site/varlik.js`);
+  assert.deepEqual([js.kod, js.j.tur, js.j.metin], [200, 'metin', 'console.log("varlık")']);
+  assert.match(js.baslik.get('content-type'), /^application\/json/, 'içerik her zaman JSON içinde gelir, belge olarak değil');
+  assert.equal((await iste(`/api/proje/${beta}/dosya?yol=cikti.txt`)).j.metin, 'Türkçe çıktı', 'UTF-16 (BOM) çözülür');
+  const png = (await iste(`/api/proje/${beta}/dosya?yol=resim.png`)).j;
+  assert.deepEqual([png.tur, png.mime, png.veri], ['resim', 'image/png', Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64')]);
+  const bin = (await iste(`/api/proje/${beta}/dosya?yol=veri.bin`)).j;
+  assert.equal(bin.tur, 'ikili');
+  assert.equal(bin.metin, undefined, 'ikili dosyanın içeriği gönderilmez');
+  assert.equal((await iste(`/api/proje/${alfa}/dosya?yol=${encodeURIComponent('dist/uyg-1.10.0.apk')}`)).j.tur, 'ikili');
+  assert.ok(!(await iste(`/api/proje/${beta}/dosyalar`)).j.girdiler.some(g => g.ad === '.env'));
+
+  const dis = path.join(gecici, 'disarida.txt');
+  for (const yol of ['.gizli/sir.txt', '.gizli', '../disarida.txt', '..\\disarida.txt', 'site/../../disarida.txt', '../../projeler/Beta/src/a.js', dis, `/${dis}`, 'yok.txt']) {
+    assert.equal((await iste(`/api/proje/${alfa}/dosya?yol=${encodeURIComponent(yol)}`)).kod, 404, `dosya: ${yol}`);
+    assert.equal((await iste(`/api/proje/${alfa}/dosyalar?yol=${encodeURIComponent(yol)}`)).kod, 404, `klasör: ${yol}`);
+  }
+  assert.equal((await iste(`/api/proje/${beta}/dosya?yol=.env`)).kod, 404, '.env okunmaz');
+  // Proje dışına çıkan bağlantı (Windows'ta junction; yönetici izni istemez) listelenmez, içinden okunmaz.
+  fs.symlinkSync(gecici, path.join(betaYol, 'disari'), 'junction');
+  assert.ok(!(await iste(`/api/proje/${beta}/dosyalar`)).j.girdiler.some(g => g.ad === 'disari'), 'dışarı bağlantı listelenmez');
+  assert.equal((await iste(`/api/proje/${beta}/dosya?yol=disari/disarida.txt`)).kod, 404);
+  assert.equal((await iste(`/api/proje/${beta}/dosyalar?yol=disari`)).kod, 404);
+  assert.equal((await iste(`/api/proje/${alfa}/dosyalar?yol=index.html`)).kod, 404, 'dosya klasör gibi listelenmez');
+  assert.equal((await iste(`/api/proje/${alfa}/dosya?yol=site`)).kod, 404, 'klasör dosya gibi okunmaz');
+  assert.equal((await iste(`/api/proje/${alfa}/dosya?yol=index.html`, { cerezli: false })).kod, 401, 'girişsiz okunmaz');
+  assert.equal((await iste(`/api/proje/${alfa}/dosya?yol=index.html`, { baslik: { Origin: U } })).kod, 403, 'ürün kökeninden okunmaz');
+  assert.equal((await iste(`/api/proje/${alfa}/dosyalar`, { baslik: { 'Sec-Fetch-Site': 'cross-site' } })).kod, 403, 'başka siteden listelenmez');
 });
 
 let urunCerez = '';

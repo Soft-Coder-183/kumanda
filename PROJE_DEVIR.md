@@ -6,7 +6,7 @@ bir ajanın önceki konuşmaları görmeden işe başlayabilmesi için yazıldı
 - **Sahibi:** Eren (Türkçe konuşur). Kendi kullanımı için; depo herkese açık (MIT).
 - **Depo:** https://github.com/Soft-Coder-183/kumanda (herkese açık, 2026-11-16). Sürümler GitHub'da etiket + yayın olarak;
   derlenecek bir şey olmadığı için yayına dosya eklenmez (kaynak zip'i yeterli).
-- **Durum:** 1.1.1 yayımlandı (2026-11-16). Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Arayüz başsız
+- **Durum:** 1.2.0 yayımlandı (2026-11-17). Sunucu ve Claude protokolü gerçek Claude Code 2.1.322 ile denendi. Arayüz başsız
   Chrome'da denendi. Tailscale yönlendirmesi kurulu (yalnızca kendi ağ), https adresi bu bilgisayardan denendi.
   **Ajan tarafından denenmedi:** gerçek telefondan kullanım, telefonda bildirim. Bkz. Açık işler.
 - **Devam eden iş:** yok.
@@ -39,7 +39,7 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 | `src/projeler.mjs` | `projeleriListele`, `oturumlariListele`, `urunleriListele` + `ikincilleriIsaretle`, `guvenliYol` |
 | `src/kimlik.mjs` | Şifre, `kumanda`/`urun` türü cihaz oturumları, giriş sınırı, biletler |
 | `src/bildirim.mjs` | VAPID anahtarı, abonelikler, içeriksiz Web Push |
-| `web/uygulama.js` | Bütün arayüz: `h()`, `md()`, görünümler (`projeSayfasi`, `sohbetGorunumu`, `tumUrunler`, `ayarlarSayfasi`) |
+| `web/uygulama.js` | Bütün arayüz: `h()`, `md()`, düzen (`duzenUygula`, `tutamac`), gezgin (`agacCiz`), görünümler (`projeSayfasi`, `sohbetGorunumu`, `tumUrunler`, `dosyaGorunumu`, `ayarlarSayfasi`), renklendirici (`vurgula`) |
 | `web/sw.js` | Yalnızca bildirim için servis çalışanı |
 | `araclar/ikon-uret.mjs` | `web/ikon-*.png` üretir (ikon değişirse yeniden çalıştır) |
 | `araclar/ekran-goruntuleri.mjs` | README görüntüleri (`belgeler/*.png`): geçici klasörde tanıtım projeleri/sohbetleri + sahte Claude ile ayrı örnek (7797/7798), başsız Chrome; sayfa hatası olursa çıkış kodu 1. Arayüz değişince yeniden çalıştır |
@@ -56,6 +56,8 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 | Ürünler | Proje bazında ve toplu liste; web/video/PDF açılır, APK/EXE/ZIP iner; cihaza uyum etiketi; gizleme |
 | Bildirim | Sayfa açık değilken "bitti / izin bekliyor" itmesi (cihaz başına Ayarlar'dan açılır) |
 | Ayarlar | Cihaz oturumları, şifre değiştirme, kök dışı klasör ekleme, gizlenen projeler |
+| Dosyalar | Proje klasörü ağacı (VS Code gezgini gibi) ve salt okunur, renklendirilmiş dosya görüntüleyici |
+| Düzen | Masaüstünde sürüklenerek boyutlanan/kapanan sol bar ve dosyalar paneli; telefonda kaydırmalı çekmeceler |
 
 ### Proje keşfi
 - Aday: her kökün alt klasörü + bir alt düzeyde Claude Code'un tanıdığı klasörler + `ayar.ekProjeler` + transkriptlerdeki `cwd`'ler.
@@ -86,6 +88,40 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 - **Gizleme** (`ayar.gizliUrunler`, dosya silinmez): her grupta üç parça: asıl ürünler, "Diğer dosyalar" (ikincil), "Gizlediklerin"
   (Göster ile geri). Bu yüzden iki liste sayfası da `?gizliler` ile ister (`/api/urunler?gizliler` 1.1.1'de eklendi; önceden bütün
   ürünler sayfasında gizlenen ürün tamamen kayboluyordu).
+- **Toplu gösterme** (1.2.0): `urun-gizle` tek `yol` ya da `yollar` dizisi alır (en çok 5000). Arayüzde proje Ürünler sekmesinin
+  araç çubuğunda ve bütün ürünler sayfasında proje başlığının yanında "Gizlenenlerin hepsini göster"; kutuda 2+ gizli varsa
+  kutunun içinde "Hepsini göster".
+- **Kutular açık kalır:** `<details>` açık/kapalı durumu modül düzeyindeki `acikKutular` kümesinde (anahtar
+  `<pid>|<oturum ya da ->|<ikincil|gizlenen>`, sohbet panelinde `<pid>|s:<oturum>`); yeniden çizim `yerindeCiz()` ile kaydırma
+  yerini korur. Önceden her "Göster" bütün listeyi yeniden çizip kutuyu kapatıyordu.
+
+### Düzen: sol bar, gezgin, çekmeceler (1.2.0)
+- Masaüstü (≥ 900 px) ızgarası `[#yan | #gezgin | #ana]`; sütun genişlikleri `#uyg` üzerindeki `--yan-gen` / `--gezgin-gen`.
+  Her öğe `grid-column` ile sabit sütundadır (biri `display:none` olunca ötekiler kaymasın diye).
+- `tutamac()`: kenar tutamacı. Sürükleme `window` üzerindeki pointer olaylarıyla izlenir: panel eşiğin altında gizlenince tutamaç da
+  gizlenir, öğeye bağlı yakalama kaybolurdu. `KAPANMA_ESIGI` (150 px) altı kapatır; kapalı sol bar `.kenar-tutamac` ile ekranın sol
+  kenarından geri sürüklenir. Durum `localStorage['kumanda.duzen']`'da (cihaz başına).
+- Düğmeler: sol barda «, ana üst çubukta ☰ (masaüstünde yalnızca sol bar kapalıyken görünür), `ustCubuk({ pid })` gezgin düğmesi.
+  Kısayollar: `Ctrl+B`, `Ctrl+Shift+E`.
+- Telefon (< 900 px): `yan-cekmece` / `gezgin-cekmece` sınıflarıyla soldan açılan sabit çekmeceler + `.perde`. Kaydırma
+  (`dokunmaKaydirmasi`): ≥ 70 px ve yataylık dikeyin 1,8 katı; yatay kayan bir öğede (kod, tablo, girdi) başlarsa yok sayılır.
+  Sağa: proje listesi (yalnızca ana görünüm açıkken); sola: açık çekmece kapanır. Ekranın en sol kenarı Android'in geri
+  hareketine ait olduğu için kenardan başlama şartı yok. Her yönlendirmede çekmeceler kapanır.
+
+### Dosya gezgini ve görüntüleyici (1.2.0)
+- Uçlar: `GET /api/proje/:pid/dosyalar?yol=<klasör>` → `{ yol, girdiler: [{ ad, yol, klasor, boyut, zaman }], kesildi }` (klasörler
+  önce, Türkçe doğal sıra, en çok 3000); `GET /api/proje/:pid/dosya?yol=<dosya>` → `tur: 'metin'` (ilk 1 MB; UTF-8, BOM'lu UTF-16
+  çözülür; ilk 8 KB'ta NUL varsa ikili), `'resim'` (base64, ≤ 5 MB, SVG dahil) ya da `'ikili'` (yalnızca bilgi, içerik yok).
+- İkisi de `guvenliYol()`'dan geçer: `.` ile başlayan parça (`.env`, `.git`), `..`, mutlak yol, dışarı çıkan bağlantı (junction)
+  reddedilir; dışarı çıkan bağlantılar listede de görünmez. Kimlik ve köken denetimi bütün `/api` gibi.
+- Arayüz yolu `#/p/<pid>/d/<encodeURIComponent(yol)>`. Gezgin önbelleği `agacOnbellek` (`<pid>|<klasör>`), açık klasörler
+  `acikKlasorler`; dosya açılınca üst klasörleri kendiliğinden açılır. Gezgin kapalıyken ağ isteği yapılmaz; her açılışta tazelenir.
+- Renklendirici `vurgula()`: dil başına sıralı kurallar (`KURAL`) tek düzenli ifadede birleşir; eşleşen grup sınıfı verir, kelimeler
+  anahtar/sabit/işlev/tip diye sınıflanır. Kurallar yakalayan grup **içeremez** (`(?:)` kullan) ve `m` bayrağı kullanılmaz (çok
+  satırlı yorumları satır sonunda keser; satır başı için `(?:^|(?<=\n))`). 400 KB üstü renklendirilmez. Satır numaraları CSS sayacı.
+- Markdown `md()` ile önizlenir; resim `data:` adresli `<img>`; **Aç / İndir** `/ac` üzerinden ürün kökenine gider.
+- Neden VS Code `serve-web` / tüneli değil: yeni bir port, ayrı kimlik ve Tailscale kuralı (ek saldırı yüzeyi) gerekirdi; salt
+  okunur görüntüleme mevcut şifre ve köken denetimlerinin arkasında kalıyor. Düzenleme istenirse önce bu karar yeniden tartılmalı.
 
 ### Ürün sunumu
 - Arayüzdeki bağ `/ac?p=<proje>&y=<yol>` (kumanda kökeni) → tek kullanımlık, 60 sn'lik bilet → ürün kökeninde `/_ac` kendi çerezini
@@ -113,6 +149,9 @@ Tehdit: bu arayüze erişen kişi bilgisayarda Claude aracılığıyla komut ça
 5. **Köken:** `/api/*` için `Origin` host'u `Host` ile aynı ve `Sec-Fetch-Site` `same-origin` olmalı; GET dışında `X-Kumanda: 1` başlığı
    şart (çapraz kökenden basit istek gönderilemez). Ürün sayfaları ayrı kökendedir, bu denetimden geçemez.
 6. **Yol:** `guvenliYol()` `..`, `.` ile başlayan parçaları ve gerçek yolu proje dışına çıkan bağlantıları reddeder.
+7. **Dosya içeriği kumanda kökeninde yalnızca veridir:** gezgin uçları içeriği JSON içinde döner (`nosniff`); arayüz onu metin
+   düğümü ya da `md()` ile çizer, resmi `data:` adresli `<img>` ile gösterir (SVG `<img>` içinde betik çalıştırmaz). Kumanda
+   kökeninde proje dosyası belge olarak açılmaz; "Aç" ürün kökenine gider.
 
 Bilinen sınırlar: çerezler port ayırmaz (aynı host'ta kumanda çerezi ürün portuna da gider ama `HttpOnly`'dir ve ürün sunucusu onu
 kullanmaz); bütün ürünler tek kökeni, dolayısıyla `localStorage`'ı paylaşır; `-Herkese` modunda tek koruma şifre ve giriş sınırıdır.
@@ -171,13 +210,20 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
   testi bunu yakalayamaz).
 - `fetch` `Host` başlığını değiştirtmez; yabancı `Host` testi `http.request` ile yapılır.
 - `ayar.json` yokken sunucu varsayılan portlarla (7777/7778) açılır: ikinci örnek başlatılırken ayar dosyası **önce** yazılmalı.
+- Sahte DOM testi bir görünümün sayfaya **yerleşmediğini** göremez: dosya görüntüleyicide içerik kabı sayfaya eklenmeden çiziliyordu;
+  test geçti, gerçek Chrome'da "Yükleniyor…"da kaldı (2026-11-17). Yeni görünüm `araclar/ekran-goruntuleri.mjs`'e de eklenir.
+- Kumanda'nın CSP'si `unsafe-eval` vermez: Playwright'ın `waitForFunction`'ı sayfada çalışmaz; metinli `waitForSelector` kullanılır.
+- Kabukta (`node -e "…"`) ters tırnak içeren metin yazmak bash'te komut yerine geçer ve betiği bozar (2026-11-17); belge
+  düzenlemeleri düzenleme aracıyla yapılır.
 - Arayüz dosyaları `no-cache` ile sunulur (ETag); arayüz değişikliği için sunucuyu yeniden başlatmak gerekmez, sunucu kodu için gerekir.
 
 ## Açık işler
 
 - **Arayüz gerçek tarayıcıda kısmen denendi** (2026-11-16): `araclar/ekran-goruntuleri.mjs` başsız Chrome'da (telefon 390 px açık
-  tema, masaüstü 1280 px koyu tema) projeler, ürünler, izin kartı ve sohbet ekranlarını hatasız açtı. Gerçek telefon klavyesi,
-  iOS Safari ve dokunma davranışı denenmedi.
+  tema, masaüstü 1280 px koyu tema) projeler, ürünler, izin kartı ve sohbet ekranlarını hatasız açtı. 1.2.0'da aynı araç gezgini,
+  dosya görüntüleyiciyi, kutunun açık kalmasını, sol barın sürüklenip kapanmasını, ☰/Ctrl+B'yi ve sahte dokunma olaylarıyla
+  kaydırmayı da denetliyor. Gerçek telefon klavyesi, iOS Safari ve gerçek parmakla kaydırma (tarayıcının kendi hareketleriyle
+  çakışma) denenmedi.
 - **Uzak erişim telefondan denenmedi** (ajan tarafından): `uzak-kur.ps1` kullanıcı tarafından çalıştırıldı (2026-11-16), `serve`
   kuralları doğru (443 → 7777, 8443 → 7778, yalnızca kendi ağ); https adresi bu bilgisayardan yanıt veriyor ve vekil başlıkları
   algılanıyor (`yerel: false`). Telefonda giriş, ürün açma ve `Secure` çerez akışı gözle denenmeli.

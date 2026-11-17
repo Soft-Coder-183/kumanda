@@ -11,7 +11,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { ayar, ayarIzle, ayarKaydet, ayarYukle, atomikYaz, KOK, VERI } from './src/ayar.mjs';
 import { HttpHata, Yonlendirici, cerezler, cerezYaz, dosyaGonder, duzMetin, istekBilgisi, json, jsonOku, yonlendir } from './src/http.mjs';
 import * as kimlik from './src/kimlik.mjs';
-import { guvenliYol, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele, urunleriOturumlaraBagla } from './src/projeler.mjs';
+import { dosyaOku, guvenliYol, klasorListele, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele, urunleriOturumlaraBagla } from './src/projeler.mjs';
 import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi } from './src/oturumlar.mjs';
 import * as bildirim from './src/bildirim.mjs';
 
@@ -246,10 +246,24 @@ api.ekle('GET', '/api/proje/:pid/urunler', async ({ res, p, url }) => {
 
 api.ekle('POST', '/api/proje/:pid/urun-gizle', async ({ req, res, p }) => {
   const proje = await projeAl(p.pid);
-  const { yol, gizli } = await jsonOku(req, 4096);
-  if (typeof yol !== 'string') throw new HttpHata(400, 'Yol gerekli');
-  urunGizle(proje, yol, Boolean(gizli));
+  const { yol, yollar, gizli } = await jsonOku(req, 512000);
+  // Tek ürün (`yol`) ya da toplu (`yollar`, ör. "Hepsini göster").
+  const liste = yollar !== undefined ? yollar : [yol];
+  if (!Array.isArray(liste) || !liste.length || liste.length > 5000 || liste.some(y => typeof y !== 'string')) throw new HttpHata(400, 'Yol gerekli');
+  urunGizle(proje, liste, Boolean(gizli));
   json(res, 200, { tamam: true });
+});
+
+// Dosya gezgini: yalnızca okuma, yalnızca JSON (dosya kumanda kökeninden belge olarak sunulmaz; açmak /ac ile ürün kökeninde).
+api.ekle('GET', '/api/proje/:pid/dosyalar', async ({ res, p, url }) => {
+  const v = await klasorListele(await projeAl(p.pid), url.searchParams.get('yol') || '');
+  if (!v) throw new HttpHata(404, 'Klasör bulunamadı');
+  json(res, 200, v);
+});
+api.ekle('GET', '/api/proje/:pid/dosya', async ({ res, p, url }) => {
+  const v = await dosyaOku(await projeAl(p.pid), url.searchParams.get('yol') || '');
+  if (!v) throw new HttpHata(404, 'Dosya bulunamadı');
+  json(res, 200, v);
 });
 
 api.ekle('GET', '/api/proje/:pid/oturum/:sid', async ({ res, p }) => {

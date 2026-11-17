@@ -13,7 +13,7 @@ const dugum = c => (c?.nodeType ? c : { nodeType: 3, metin: String(c) });
 function oge(etiket) {
   const siniflar = () => new Set(h.className.split(/\s+/).filter(Boolean));
   const h = {
-    etiket, nodeType: 1, cocuklar: [], dinleyiciler: {}, dataset: {}, style: {}, className: '', isConnected: true, value: '', files: [],
+    etiket, nodeType: 1, cocuklar: [], dinleyiciler: {}, dataset: {}, style: { setProperty: () => {} }, className: '', isConnected: true, value: '', files: [],
     scrollHeight: 0, scrollTop: 0, clientHeight: 0, innerHTML: '', textContent: '', width: 10, height: 10,
     classList: {
       add: (...a) => { h.className = [...new Set([...siniflar(), ...a])].join(' '); },
@@ -59,6 +59,18 @@ const yanitlar = {
   },
   '/api/cihazlar': { cihazlar: [{ kimlik: 'k1', cihaz: 'Android · Chrome', son: simdi, bu: true }, { kimlik: 'k2', cihaz: 'Windows · Edge', son: simdi - 1e6, bu: false }] },
   [`/api/proje/${PID}/gonder`]: { oturum: SID, nesil: 'n1' },
+  [`/api/proje/${PID}/dosyalar`]: { yol: '', kesildi: true, girdiler: [
+    { ad: 'src', yol: 'src', klasor: true, boyut: 0, zaman: simdi }, { ad: 'BENIOKU.md', yol: 'BENIOKU.md', klasor: false, boyut: 20, zaman: simdi },
+    { ad: 'a.js', yol: 'src/a.js', klasor: false, boyut: 20, zaman: simdi }] },
+};
+// Dosya görüntüleyici: yol sorgusuna göre farklı yanıtlar.
+const KOD = 'import x from "y";\n// yorum satırı\nconst sayi = 42; /* blok\nyorum */\nfunction topla(a, b) { return a + b; }\nconst s = `şablon ${sayi}`;\n';
+const dosyalar = {
+  'src/a.js': { ad: 'a.js', yol: 'src/a.js', boyut: KOD.length, zaman: simdi, tur: 'metin', metin: KOD, kesildi: false },
+  'BENIOKU.md': { ad: 'BENIOKU.md', yol: 'BENIOKU.md', boyut: 20, zaman: simdi, tur: 'metin', metin: '# Başlık\n\n<script>alert(1)</script> **kalın**', kesildi: true },
+  'p.ps1': { ad: 'p.ps1', yol: 'p.ps1', boyut: 20, zaman: simdi, tur: 'metin', metin: '<# blok #>\n$ad = "x" # yorum\nif ($true) { Write-Host $ad }' },
+  'i.png': { ad: 'i.png', yol: 'i.png', boyut: 4, zaman: simdi, tur: 'resim', mime: 'image/png', veri: 'AAAA' },
+  'a.apk': { ad: 'a.apk', yol: 'a.apk', boyut: 4, zaman: simdi, tur: 'ikili' },
 };
 const istekler = [];
 
@@ -72,7 +84,7 @@ class SahteAkis {
 const belge = {
   hidden: false, title: 'Kumanda', body: oge('body'), dinleyiciler: {},
   getElementById: () => kok, createElement: oge, createTextNode: m => ({ nodeType: 3, metin: m }),
-  querySelector: () => null, addEventListener: (t, f) => { (belge.dinleyiciler[t] ||= []).push(f); }, removeEventListener: () => {},
+  querySelector: () => null, querySelectorAll: () => [], addEventListener: (t, f) => { (belge.dinleyiciler[t] ||= []).push(f); }, removeEventListener: () => {},
 };
 const kok = oge('div');
 const pencere = {};
@@ -85,12 +97,22 @@ tanimla('location', { hash: '', reload: () => {} });
 tanimla('history', { replaceState: (_, __, h) => { location.hash = h; } });
 tanimla('addEventListener', (t, f) => { (pencere[t] ||= []).push(f); });
 tanimla('innerHeight', 800);
+tanimla('innerWidth', 390);
+tanimla('removeEventListener', () => {});
 tanimla('EventSource', SahteAkis);
 tanimla('setInterval', () => 0);
 tanimla('createImageBitmap', async () => ({ width: 4000, height: 3000 }));
 tanimla('fetch', async (yol, sec) => {
   istekler.push({ yol, govde: sec?.body ? JSON.parse(sec.body) : null });
-  const j = yanitlar[yol.split('?')[0]] || { tamam: true };
+  const [yer, sorgu = ''] = yol.split('?');
+  if (yer === `/api/proje/${PID}/dosyalar` && new URLSearchParams(sorgu).get('yol') === 'src') {
+    return { ok: true, status: 200, json: async () => ({ yol: 'src', girdiler: [{ ad: 'a.js', yol: 'src/a.js', klasor: false, boyut: 20, zaman: simdi }] }) };
+  }
+  if (yer === `/api/proje/${PID}/dosya`) {
+    const d = dosyalar[new URLSearchParams(sorgu).get('yol')];
+    return d ? { ok: true, status: 200, json: async () => d } : { ok: false, status: 404, json: async () => ({ hata: 'Dosya bulunamadı' }) };
+  }
+  const j = yanitlar[yer] || { tamam: true };
   return { ok: true, status: 200, json: async () => j };
 });
 
@@ -114,7 +136,7 @@ const metinler = el => (el.cocuklar || []).flatMap(c => (c.nodeType === 3 ? [c.m
 test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async () => {
   await import('../web/uygulama.js');
   await bekle(50);
-  assert.equal(kok.cocuklar.length, 2, 'iskelet (yan + ana) kuruldu');
+  assert.deepEqual(kok.cocuklar.slice(0, 3).map(c => c.id || c.etiket), ['yan', 'gezgin', 'ana'], 'iskelet (yan + gezgin + ana) kuruldu');
   assert.ok(metinler(kok).includes('Alfa'), 'proje listesi çizildi');
   assert.ok(!metinler(kok).includes('Beta') || true);
 
@@ -132,6 +154,15 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.ok(baglar.some(e => e.href === `/ac?p=${PID}&y=index.html`));
   assert.ok(baglar.some(e => e.href === `/ac?p=${PID}&y=${encodeURIComponent('dist/a-1.0.apk')}&indir=1`));
   await hepsineBas(bas);
+  const toplu = istekler.filter(i => i.yol === `/api/proje/${PID}/urun-gizle` && i.govde?.yollar);
+  assert.ok(toplu.some(i => i.govde.gizli === false && i.govde.yollar.join() === 'dist/a.exe'), '"Gizlenenlerin hepsini göster" tek istekle gider');
+  // Açık bırakılan "Gizlediklerin" kutusu, liste yeniden çizilince (Göster'den sonra) açık kalır.
+  const kutu = hepsi.findLast(e => e.etiket === 'details' && e.className === 'diger gizlenen');
+  kutu.open = true;
+  for (const f of kutu.dinleyiciler.toggle) f();
+  bas = hepsi.length;
+  await git(`#/p/${PID}/urunler`);
+  assert.equal(hepsi.slice(bas).find(e => e.etiket === 'details' && e.className === 'diger gizlenen')?.open, true, 'kutu açık kalır');
   await git('#/urunler');
   const tumu = metinler(kok);
   assert.ok(tumu.includes('Alfa ›') && tumu.includes('APK derleme sohbeti') && tumu.includes('Bir sohbete bağlanamayanlar'),
@@ -236,6 +267,58 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   son.readyState = 2;
   son.onerror();
   await bekle(40);
+
+  // gezgin (proje dosyaları) ve dosya görüntüleyici
+  bas = hepsi.length;
+  await git(`#/p/${PID}/d/${encodeURIComponent('src/a.js')}`);
+  await bekle(30);
+  const gezginDugme = hepsi.slice(bas).find(e => e.className.includes('gezgin-dugme'));
+  assert.ok(gezginDugme, 'proje sayfalarında Dosyalar düğmesi');
+  for (const f of gezginDugme.dinleyiciler.click) f(olay(gezginDugme));
+  await bekle(40);
+  assert.ok(kok.className.includes('gezgin-cekmece'), 'telefonda gezgin çekmece olarak açılır');
+  assert.ok(istekler.some(i => i.yol === `/api/proje/${PID}/dosyalar?yol=`), 'kök klasör istendi');
+  assert.ok(istekler.some(i => i.yol === `/api/proje/${PID}/dosyalar?yol=src`), 'açık dosyanın klasörü kendiliğinden açılır');
+  const agac = hepsi.findLast(e => e.className === 'agac');
+  const agacMetni = metinler(agac);
+  assert.ok(['src', 'a.js', 'BENIOKU.md'].every(m => agacMetni.includes(m)), agacMetni.join('|'));
+  assert.ok(agac.cocuklar.some(e => e.className?.includes('secili') && e.href === `#/p/${PID}/d/${encodeURIComponent('src/a.js')}`), 'açık dosya seçili');
+  assert.ok(agacMetni.some(m => m.includes('ilk 3000')), 'kesilen klasör belirtilir');
+  const span = (sinif, metin) => hepsi.slice(bas).some(e => e.className === sinif && metinler(e).join('') === metin);
+  for (const [s, m] of [['s-anahtar', 'import'], ['s-dizgi', '"y"'], ['s-yorum', '// yorum satırı'], ['s-anahtar', 'const'], ['s-sayi', '42'],
+    ['s-yorum', '/* blok'], ['s-yorum', 'yorum */'], ['s-islev', 'topla'], ['s-dizgi', '`şablon ${sayi}`']]) assert.ok(span(s, m), `renklendirme: ${s} ${m}`);
+  const kodEl = hepsi.slice(bas).findLast(e => e.className === 'kod-gorunum');
+  assert.equal(kodEl.cocuklar.length, 6, 'satır başına bir öğe');
+  const dosyaGovde = hepsi.slice(bas).find(e => e.className === 'dosya-govde');
+  assert.ok(dosyaGovde.cocuklar.some(c => c.cocuklar?.includes(kodEl)), 'kod görünümü sayfaya yerleşir');
+  await hepsineBas(bas);
+
+  bas = hepsi.length;
+  await git(`#/p/${PID}/d/BENIOKU.md`);
+  const onizleme = hepsi.slice(bas).find(e => e.className === 'ileti claude md-onizleme');
+  assert.ok(onizleme?.innerHTML.includes('<h1>') && !onizleme.innerHTML.includes('<script>'), 'Markdown önizlemesi kaçırılır');
+  assert.ok(metinler(kok).includes('ilk 1 MB gösteriliyor'));
+  await hepsineBas(bas);
+  assert.ok(hepsi.slice(bas).some(e => e.className === 'kod-gorunum'), 'Önizleme kapatılınca kaynak görünür');
+
+  bas = hepsi.length;
+  await git(`#/p/${PID}/d/p.ps1`);
+  assert.ok(span('s-yorum', '<# blok #>') && span('s-degisken', '$ad') && span('s-anahtar', 'if') && span('s-yorum', '# yorum'), 'PowerShell renklendirmesi');
+  bas = hepsi.length;
+  await git(`#/p/${PID}/d/i.png`);
+  assert.ok(hepsi.slice(bas).some(e => e.etiket === 'img' && e.src === 'data:image/png;base64,AAAA'), 'resim gösterilir');
+  await git(`#/p/${PID}/d/a.apk`);
+  assert.ok(metinler(kok).some(m => m.includes('metin değil')));
+  await git(`#/p/${PID}/d/yok.txt`);
+  assert.ok(metinler(kok).some(m => m.includes('Dosya bulunamadı')));
+
+  // sol bar: ☰ telefonda çekmece açar, dışına dokununca kapanır
+  const yanDugme = hepsi.findLast(e => e.className.includes('yan-dugme'));
+  for (const f of yanDugme.dinleyiciler.click) f(olay(yanDugme));
+  assert.ok(kok.className.includes('yan-cekmece'));
+  const perde = kok.cocuklar.find(e => e.className === 'perde');
+  for (const f of perde.dinleyiciler.click) f(olay(perde));
+  assert.ok(!kok.className.includes('yan-cekmece') && !kok.className.includes('gezgin-cekmece'));
   await git('#/');
 
   const bozuk = hepsi.flatMap(e => e.cocuklar.filter(c => c.nodeType === 3 && /^(null|undefined|false|true)$|\[object /.test(c.metin)).map(c => `${e.etiket}.${e.className}: ${c.metin}`));

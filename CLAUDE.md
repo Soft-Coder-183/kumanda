@@ -3,7 +3,7 @@
 Eren'in bilgisayarındaki Claude Code'u ve bütün projelerinin ürünlerini (HTML, APK, EXE, ZIP, video, belge) telefondan ya da başka
 bir bilgisayardan kullanmasını sağlayan yerel sunucu + web arayüzü. Bağımlılıksız Node.js (22+), derleme adımı yok. Sunucu yalnızca
 `127.0.0.1`'i dinler; uzaktan erişim Tailscale yönlendirmesiyle gelir (kurulu, yalnızca kendi ağ). Herkese açık depo (MIT):
-https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.1 (2026-11-16); gerçek telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
+https://github.com/Soft-Coder-183/kumanda. Durum: 1.2.0 (2026-11-17); gerçek telefondan kullanım ajan tarafından denenmedi. Ayrıntılar: `PROJE_DEVIR.md` (gerektiğinde ilgili bölümü oku).
 
 ## Komutlar
 - Kurulum / yeniden başlatma: `.\kur.ps1` (otomatik başlatma kısayolu + sunucuyu yeni kodla başlatır)
@@ -21,7 +21,8 @@ https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.1 (2026-11-16); gerçek te
 - `src/projeler.mjs`: proje keşfi, oturum listesi, ürün taraması, güvenli yol çözümü
 - `src/kimlik.mjs`: şifre (scrypt), cihaz oturumları, giriş sınırı, ürün kökeni biletleri
 - `src/bildirim.mjs`: Web Push (içeriksiz itme); `src/http.mjs`: HTTP yardımcıları; `src/ayar.mjs`: ayar dosyası
-- `web/`: arayüz (`uygulama.js`, `stil.css`, `sw.js`); derlenmez, olduğu gibi sunulur
+- `web/`: arayüz (`uygulama.js`: görünümler, düzen/gezgin, dosya görüntüleyici ve sözdizimi renklendirici; `stil.css`, `sw.js`);
+  derlenmez, olduğu gibi sunulur
 - `test/`: `kumanda.test.mjs` (sunucu uçtan uca), `arayuz.test.mjs` (sahte DOM duman testi), `sahte-claude.mjs`
 - Gizli veriler depoda değil: `%LOCALAPPDATA%\Kumanda\` (ayar, şifre özeti, cihaz oturumları, bildirim anahtarı, günlük)
 
@@ -36,7 +37,9 @@ https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.1 (2026-11-16); gerçek te
 - **Bu sistem bilgisayarda komut çalıştırma yetkisi verir.** Kimlik, köken ve yol denetimlerini gevşeten değişiklik yapılmadan önce
   `PROJE_DEVIR.md` → "Güvenlik modeli" okunur; her güvenlik kuralının testi `test/kumanda.test.mjs`'te durur ve silinmez.
 - Sunucu varsayılan olarak yalnızca `127.0.0.1`'i dinler; bunu ya da "ilk şifre yalnızca yerelden" kuralını değiştirme.
-- Ürünler her zaman ayrı kökenden (ürün portu) sunulur; kumanda kökeninden proje dosyası sunan bir yol eklenmez.
+- Ürünler her zaman ayrı kökenden (ürün portu) sunulur; kumanda kökeninden proje dosyası **belge olarak** sunan bir yol eklenmez.
+  Dosya gezgini (`/api/proje/:pid/dosya`) içeriği yalnızca JSON içinde döner ve arayüz onu metin olarak çizer (`h()`/`md()`);
+  dosya içeriği hiçbir zaman `innerHTML`'e, `iframe`'e ya da kumanda kökeninde açılan bir sayfaya verilmez.
 - Şifre, jeton, anahtar depoya ya da belgelere yazılmaz; testler kendi geçici veri klasörünü kullanır (`KUMANDA_VERI`).
 - Gerçek Claude ile deneme kota harcar: önce `npm test`, gerçek deneme yalnızca protokol değişikliklerinde ve `haiku` ile.
 - Çalışan sunucu kod değişikliğini kendiliğinden almaz; değişiklikten sonra `.\kur.ps1` (ya da `--durdur` + `--arkaplan`).
@@ -55,4 +58,5 @@ https://github.com/Soft-Coder-183/kumanda. Durum: 1.1.1 (2026-11-16); gerçek te
 - Mimari, Güvenlik modeli: kimlik, köken, tünel ya da ürün sunumuna dokunmadan önce
 - Claude Code protokolü: `src/oturumlar.mjs`'e dokunmadan ya da Claude Code güncellenince
 - Ürün taraması: hangi dosyanın ürün sayıldığı, "ikincil" kuralları
+- Dosya gezgini ve düzen: gezgine, dosya görüntüleyiciye, renklendiriciye ya da kenar çubuklarına dokunmadan önce
 - Geliştirme ortamı ve tuzaklar, Açık işler: yeni işe başlamadan önce

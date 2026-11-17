@@ -431,10 +431,12 @@ export async function urunleriListele(proje, { taze = false, gizliler = false } 
   return gizliler ? liste : liste.filter(u => !u.gizli);
 }
 
-export function urunGizle(proje, yol, gizli) {
+/** Bir ya da birkaç ürünü gizler / yeniden gösterir (`yollar` dizi ya da tek yol). */
+export function urunGizle(proje, yollar, gizli) {
   ayarYukle();
-  const liste = (ayar.gizliUrunler[proje.kimlik] || []).filter(y => y !== yol);
-  if (gizli) liste.push(yol);
+  const kume = new Set([yollar].flat());
+  const liste = (ayar.gizliUrunler[proje.kimlik] || []).filter(y => !kume.has(y));
+  if (gizli) liste.push(...kume);
   if (liste.length) ayar.gizliUrunler[proje.kimlik] = liste; else delete ayar.gizliUrunler[proje.kimlik];
   ayarKaydet();
 }
@@ -452,4 +454,63 @@ export function guvenliYol(proje, goreli) {
     if (gercek !== kok && !icinde(kok, gercek)) return null;
     return gercek;
   } catch { return null; }
+}
+
+// ---------- dosya gezgini (yalnızca okuma) ----------
+// İçerik kumanda kökenine yalnızca JSON içinde metin (ya da resim için base64) olarak gider; arayüz onu metin olarak
+// çizer, hiçbir zaman belge/betik olarak yorumlamaz. Dosyayı tarayıcıda "açmak" yine ürün kökeninden (/ac) yapılır.
+const KLASOR_SINIR = 3000, METIN_SINIR = 1e6, RESIM_SINIR = 5e6;
+const RESIM_TURU = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.bmp': 'image/bmp', '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.avif': 'image/avif' };
+const IKILI = /\.(exe|dll|apk|aab|zip|7z|rar|gz|tgz|jar|class|so|o|obj|pdb|bin|dat|db|sqlite|mp4|mov|mkv|webm|mp3|wav|ogg|flac|pdf|docx?|xlsx?|pptx?|ttf|otf|woff2?|psd|keystore|jks|msi|iso)$/i;
+const adSirala = (a, b) => (b.klasor - a.klasor) || a.ad.localeCompare(b.ad, 'tr', { numeric: true, sensitivity: 'base' });
+
+/** Proje içindeki bir klasörün girdileri: klasörler önce, VS Code gibi ada göre. Gizli (.) girdiler gösterilmez. */
+export async function klasorListele(proje, goreli = '') {
+  const dizin = guvenliYol(proje, goreli);
+  if (!dizin || !(await klasorMu(dizin))) return null;
+  const taban = String(goreli).split(/[\\/]+/).filter(Boolean).join('/');
+  const girdiler = (await fsp.readdir(dizin, { withFileTypes: true })).filter(g => !g.name.startsWith('.'));
+  const kesildi = girdiler.length > KLASOR_SINIR;
+  const liste = (await Promise.all(girdiler.slice(0, KLASOR_SINIR).map(async g => {
+    const yol = taban ? `${taban}/${g.name}` : g.name;
+    let hedef = path.join(dizin, g.name);
+    if (g.isSymbolicLink()) { hedef = guvenliYol(proje, yol); if (!hedef) return null; } // dışarı çıkan bağlantılar gösterilmez
+    try {
+      const s = await fsp.stat(hedef);
+      return { ad: g.name, yol, klasor: s.isDirectory(), boyut: s.isDirectory() ? 0 : s.size, zaman: s.mtimeMs };
+    } catch { return null; }
+  }))).filter(Boolean).sort(adSirala);
+  return { yol: taban, girdiler: liste, kesildi };
+}
+
+/** Dosyayı görüntülemek için okur: metin (en çok 1 MB), resim (base64, en çok 5 MB) ya da yalnızca bilgi (ikili). */
+export async function dosyaOku(proje, goreli) {
+  const dosya = guvenliYol(proje, goreli);
+  if (!dosya) return null;
+  let s;
+  try { s = await fsp.stat(dosya); } catch { return null; }
+  if (!s.isFile()) return null;
+  const bilgi = { ad: path.basename(dosya), yol: String(goreli).split(/[\\/]+/).filter(Boolean).join('/'), boyut: s.size, zaman: s.mtimeMs };
+  const uzanti = path.extname(dosya).toLowerCase();
+  if (RESIM_TURU[uzanti]) {
+    if (s.size > RESIM_SINIR) return { ...bilgi, tur: 'ikili', neden: 'Resim çok büyük' };
+    return { ...bilgi, tur: 'resim', mime: RESIM_TURU[uzanti], veri: (await fsp.readFile(dosya)).toString('base64') };
+  }
+  if (IKILI.test(uzanti)) return { ...bilgi, tur: 'ikili' };
+  const el = await fsp.open(dosya, 'r');
+  let tampon;
+  try {
+    tampon = Buffer.alloc(Math.min(s.size, METIN_SINIR));
+    tampon = tampon.subarray(0, (await el.read(tampon, 0, tampon.length, 0)).bytesRead);
+  } finally { await el.close(); }
+  let metin;
+  const cift = () => tampon.subarray(2, tampon.length - (tampon.length % 2));
+  if (tampon[0] === 0xff && tampon[1] === 0xfe) metin = cift().toString('utf16le'); // Windows PowerShell çıktıları
+  else if (tampon[0] === 0xfe && tampon[1] === 0xff) metin = Buffer.from(cift()).swap16().toString('utf16le');
+  else {
+    if (tampon.subarray(0, 8000).includes(0)) return { ...bilgi, tur: 'ikili' };
+    metin = tampon.toString('utf8').replace(/^﻿/, '');
+  }
+  return { ...bilgi, tur: 'metin', metin, kesildi: s.size > METIN_SINIR };
 }
