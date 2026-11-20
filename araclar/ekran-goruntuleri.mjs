@@ -153,6 +153,28 @@ try {
   await s.click('.izin >> text=İzin ver');
   await s.waitForSelector('text=Komut çalıştı.');
   const sohbetAdresi = s.url();
+  // Durum çubuğunda son isteğin effort'u (sahte Claude transkripte api-request yazar).
+  await s.waitForSelector('.durum-cubugu >> text=/effort /');
+  // Başlığın yanındaki "Ürünler" sekmesi yalnızca bu sohbetin ürünlerini açar; yazma alanı görünür kalır.
+  await s.click('.urun-sekme');
+  await s.waitForSelector('.sohbet-urunleri:not([hidden]) .urun');
+  if (!(await s.isVisible('textarea'))) hatalar.push('ürün paneli açıkken yazma alanı görünmüyor');
+  if (process.env.KUMANDA_ARA_GORUNTU) await s.screenshot({ path: path.join(process.env.KUMANDA_ARA_GORUNTU, 'sohbet-urunleri.png') });
+  await s.click('.urun-sekme');
+  // /btw yan sorusu: kart önce "bekliyor", sonra yanıtla; asıl sohbete istem gitmez.
+  await s.fill('textarea', '/btw Hangi dosyaları değiştirdin?');
+  await s.click('button[type=submit]');
+  await s.waitForSelector('.yan-soru:not(.bekliyor) .yan-yanit >> text=Yan yanıt');
+  if (await s.$('.ileti.kullanici >> text=/btw')) hatalar.push('/btw asıl sohbete gitti');
+  if (process.env.KUMANDA_ARA_GORUNTU) await s.screenshot({ path: path.join(process.env.KUMANDA_ARA_GORUNTU, 'btw.png') });
+  // Gönderilmemiş istem başka sayfaya gidip dönünce yerinde.
+  await s.fill('textarea', 'yarım kalmış istem');
+  await s.goto(`${K}/#/`);
+  await s.waitForSelector('.satir');
+  await s.goto(sohbetAdresi);
+  await s.waitForSelector('table');
+  if (await s.inputValue('textarea') !== 'yarım kalmış istem') hatalar.push('taslak geri gelmedi');
+  await s.fill('textarea', '');
 
   // Bütün ürünler: proje → sohbet grupları; bir ürün gizlenir ve "Gizlediklerin" kutusuna geçer.
   await s.goto(`${K}/#/urunler`);
