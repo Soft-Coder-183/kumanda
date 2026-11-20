@@ -135,9 +135,14 @@ try {
   await bekle(300);
   await cek('telefon-projeler');
 
+  // Proje seçilince son sohbet açılır; geri oku projenin sohbetler sekmesine götürür.
   await s.click('text=Hava Durumu');
+  await s.waitForSelector('table');
+  if (!/\/s\/[0-9a-f-]{36}$/.test(s.url())) hatalar.push(`proje seçilince son sohbet açılmadı: ${s.url()}`);
+  await s.click('#ana .geri');
+  await s.waitForSelector('a.sekme.secili >> text=Sohbetler');
   await s.waitForSelector('text=Haftalık tahmin ekranı');
-  await s.click('text=Ürünler >> nth=-1');
+  await s.click('a.sekme >> text=Ürünler');
   await s.waitForSelector('.oturum-grubu');
   await bekle(300);
   await cek('telefon-urunler');
@@ -242,6 +247,12 @@ try {
   await m.keyboard.press('Control+b');
   await m.goto(`${K}/#/p/${hava}/d/README.md`);
   await m.waitForSelector('.md-onizleme h1');
+  // Yeni proje: sol bardaki ＋ → ad → projede yeni sohbet ekranı (görüntülerden sonra, liste değişmesin diye).
+  await m.click('#yan [title="Yeni proje"]');
+  await m.fill('.yeni-proje input', 'Yeni Deneme');
+  await m.click('.yeni-proje button[type=submit]');
+  await m.waitForURL(/\/yeni$/);
+  await m.waitForSelector('#yan .satir >> text=Yeni Deneme');
 
   if (hatalar.length) { console.error('Sayfa hataları:\n' + hatalar.join('\n')); process.exitCode = 1; }
 } finally {
