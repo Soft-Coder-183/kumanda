@@ -14,6 +14,7 @@ import * as kimlik from './src/kimlik.mjs';
 import { dosyaOku, guvenliYol, klasorListele, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele, urunleriOturumlaraBagla } from './src/projeler.mjs';
 import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi } from './src/oturumlar.mjs';
 import * as bildirim from './src/bildirim.mjs';
+import { arayaKat, yanSoruSor, yanSoruVar, yanSorular } from './src/yansoru.mjs';
 
 const SURUM = JSON.parse(fs.readFileSync(path.join(KOK, 'package.json'), 'utf8')).version;
 const WEB = path.join(KOK, 'web');
@@ -272,7 +273,27 @@ api.ekle('GET', '/api/proje/:pid/oturum/:sid', async ({ res, p }) => {
   const dosya = await oturumDosyasi(proje, p.sid);
   if (!dosya && !k) throw new HttpHata(404, 'Oturum bulunamadı');
   const gecmis = dosya ? await gecmisOku(dosya, k ? k.gecmisSinir : Infinity) : { ogeler: [], kirpildi: false };
-  json(res, 200, { ...gecmis, canli: k ? k.anlik() : null });
+  // Açık koşu varsa onun başlangıcından sonraki yan sorular canlı akıştan gelir (iki kez çizilmesin, sırası doğru olsun).
+  const ilk = gecmis.kirpildi ? gecmis.ogeler.find(o => o.z)?.z || 0 : 0;
+  const yanlar = (await yanSorular(p.sid)).filter(y => y.z >= ilk && !(k && !k.kapali && y.z >= k.sinirZ));
+  json(res, 200, { ...gecmis, ogeler: arayaKat(gecmis.ogeler, yanlar), canli: k ? k.anlik() : null });
+});
+
+// /btw yan sorusu: sohbetin diske yazılmayan araçsız bir kopyası yanıtlar; asıl sohbet değişmez (src/yansoru.mjs).
+api.ekle('POST', '/api/proje/:pid/oturum/:sid/yan-soru', async ({ req, res, p }) => {
+  const proje = await projeAl(p.pid);
+  const g = await jsonOku(req, 64 * 1024);
+  const soru = typeof g.soru === 'string' ? g.soru.trim() : '';
+  if (!soru || soru.length > 20000) throw new HttpHata(400, 'Yan soru boş ya da çok uzun');
+  if (typeof g.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(g.id)) throw new HttpHata(400, 'Geçersiz kimlik');
+  if (g.model != null && !MODELLER.includes(g.model)) throw new HttpHata(400, 'Geçersiz model');
+  if (g.efor != null && !EFORLAR.includes(g.efor)) throw new HttpHata(400, 'Geçersiz effort');
+  if (!await oturumDosyasi(proje, p.sid)) throw new HttpHata(404, 'Yan soru için sohbetin kaydı henüz yok; ilk yanıtı bekle');
+  if (await yanSoruVar(p.sid, g.id)) throw new HttpHata(409, 'Bu yan soru zaten soruldu');
+  let o;
+  try { o = await yanSoruSor(proje, p.sid, { id: g.id, soru, model: g.model || '', efor: g.efor || '' }, x => kosuBul(p.sid)?.yanSoruYayinla(x)); }
+  catch (e) { throw new HttpHata(e.kod || 500, e.message); }
+  json(res, 200, o);
 });
 
 const RESIM_TURLERI = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);

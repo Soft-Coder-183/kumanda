@@ -54,7 +54,7 @@ const yanitlar = {
   '/api/urunler': { gruplar: [{ proje, urunler, oturumlar: { [SID]: { baslik: 'APK derleme sohbeti', zaman: simdi } } }] },
   [`/api/proje/${PID}/oturum/${SID}`]: {
     kirpildi: true,
-    ogeler: [{ t: 'kullanici', metin: 'selam', resim: 1 }, { t: 'metin', metin: ZENGIN }, { t: 'arac', id: 't0', ad: 'Read', girdi: { file_path: 'C:\\a\\b.txt' } }, { t: 'arac-sonuc', id: 't0', hata: false, metin: 'içerik' }, { t: 'not', metin: '/clear' }],
+    ogeler: [{ t: 'kullanici', metin: 'selam', resim: 1 }, { t: 'metin', metin: ZENGIN }, { t: 'arac', id: 't0', ad: 'Read', girdi: { file_path: 'C:\\a\\b.txt' } }, { t: 'arac-sonuc', id: 't0', hata: false, metin: 'içerik' }, { t: 'not', metin: '/clear' }, { t: 'btw', id: 'b0', z: simdi, soru: 'terminal sorusu', kaynak: 'terminal' }],
     canli: { t: 'durum', durum: 'calisiyor', mod: 'default', model: 'claude-x', nesil: 'n1', limit: { bes: 0.5, yedi: 0.1 } },
   },
   '/api/cihazlar': { cihazlar: [{ kimlik: 'k1', cihaz: 'Android · Chrome', son: simdi, bu: true }, { kimlik: 'k2', cihaz: 'Windows · Edge', son: simdi - 1e6, bu: false }] },
@@ -107,6 +107,10 @@ tanimla('fetch', async (yol, sec) => {
   const [yer, sorgu = ''] = yol.split('?');
   if (yer === `/api/proje/${PID}/dosyalar` && new URLSearchParams(sorgu).get('yol') === 'src') {
     return { ok: true, status: 200, json: async () => ({ yol: 'src', girdiler: [{ ad: 'a.js', yol: 'src/a.js', klasor: false, boyut: 20, zaman: simdi }] }) };
+  }
+  if (yer.endsWith('/yan-soru')) {
+    const g = JSON.parse(sec.body);
+    return { ok: true, status: 200, json: async () => ({ ...g, z: simdi, kaynak: 'kumanda', yanit: '**yan yanıt**' }) };
   }
   if (yer === `/api/proje/${PID}/dosya`) {
     const d = dosyalar[new URLSearchParams(sorgu).get('yol')];
@@ -234,6 +238,27 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   yolla({ t: 'sonuc', hata: 'Kota doldu', kesildi: false });
   yolla({ t: 'sonuc', hata: null, kesildi: true });
   assert.ok(metinler(kok).includes('Tamamlandı · 1 dk 15 sn'));
+  // /btw yan soruları: terminalden gelen yanıtsız kart, canlı "bekliyor" → yanıt aynı kartı günceller
+  assert.ok(metinler(kok).includes('terminal sorusu') && metinler(kok).some(m => m.startsWith('Terminalden soruldu')), 'terminaldeki /btw geçmişte');
+  const kartOnce = hepsi.filter(e => e.className.startsWith('yan-soru')).length;
+  yolla({ t: 'btw', id: 'b1', z: simdi, soru: 'canlı yan', kaynak: 'kumanda', bekliyor: true });
+  yolla({ t: 'btw', id: 'b1', z: simdi, soru: 'canlı yan', kaynak: 'kumanda', yanit: '**cevap**' });
+  yolla({ t: 'btw', id: 'b1', z: simdi, soru: 'canlı yan', kaynak: 'kumanda', bekliyor: true });
+  assert.equal(hepsi.filter(e => e.className.startsWith('yan-soru')).length, kartOnce + 1, 'aynı kimlik tek kart');
+  const kart = hepsi.findLast(e => e.className.startsWith('yan-soru'));
+  assert.equal(kart.className, 'yan-soru', 'yanıtlanmış kart "bekliyor"a dönmez');
+  assert.ok(kart.cocuklar.some(c => c.innerHTML === '<p><strong>cevap</strong></p>'), 'yanıt Markdown olarak çizilir');
+  const sohbetAlani = hepsi.findLast(e => e.etiket === 'textarea');
+  const sohbetFormu = hepsi.findLast(e => e.etiket === 'form' && e.className === 'yazma');
+  sohbetAlani.value = '/btw nasıl gidiyor?';
+  for (const f of sohbetFormu.dinleyiciler.submit) await f(olay(sohbetFormu));
+  await bekle(30);
+  const yanIstek = istekler.findLast(i => i.yol === `/api/proje/${PID}/oturum/${SID}/yan-soru`);
+  assert.equal(yanIstek?.govde.soru, 'nasıl gidiyor?', '/btw ile başlayan istem yan soru olarak gider');
+  assert.match(yanIstek.govde.id, /^[0-9a-f-]{36}$/);
+  assert.ok(!istekler.some(i => i.yol === `/api/proje/${PID}/gonder` && i.govde?.metin?.startsWith('/btw')), 'asıl sohbete gitmez');
+  assert.equal(sohbetAlani.value, '', 'yazma alanı boşalır');
+  assert.ok(hepsi.some(e => e.innerHTML === '<p><strong>yan yanıt</strong></p>'), 'yanıt karta yazılır');
   yolla({ t: 'yenile' }, false);
   await bekle(40);
   yolla({ t: 'durum', durum: 'kapali', mod: 'default', model: 'claude-x', nesil: 'n1', limit: null }, false);

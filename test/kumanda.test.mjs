@@ -361,6 +361,53 @@ test('süreç kapanınca geçmiş transkriptten okunur; yeni istem oturumu sürd
   assert.equal((await iste(`/api/proje/${alfa}/gonder`, { govde: { oturum: '00000000-0000-4000-8000-000000000000', metin: 'x' } })).kod, 404);
 });
 
+test('/btw yan sorusu: sohbetin araçsız, kaydedilmeyen kopyası yanıtlar; terminaldekiler history.jsonl\'den gelir', async () => {
+  const transkript = fs.readdirSync(path.join(claudeDizin, 'projects'), { recursive: true }).find(f => f.endsWith(`${oturum}.jsonl`));
+  const transkriptYol = path.join(claudeDizin, 'projects', transkript);
+  // Claude Code terminaldeki /btw'nin yalnızca sorusunu istem geçmişine yazar (yanıtı hiçbir yere yazmaz).
+  yazDosya(path.join(claudeDizin, 'history.jsonl'), [
+    { display: '/btw terminalden soru', timestamp: 1000, project: 'x', sessionId: oturum },
+    { display: '/btw', timestamp: 1001, project: 'x', sessionId: oturum },
+    { display: '/btw başka sohbetin sorusu', timestamp: 1002, project: 'x', sessionId: '99999999-0000-4000-8000-000000000000' },
+    { display: 'sıradan istem', timestamp: 1003, project: 'x', sessionId: oturum },
+  ].map(o => JSON.stringify(o)).join('\n') + '\n');
+  const ilk = await iste(`/api/proje/${alfa}/oturum/${oturum}`);
+  const terminal = ilk.j.ogeler.filter(o => o.t === 'btw');
+  assert.deepEqual(terminal.map(o => [o.soru, o.kaynak]), [['terminalden soru', 'terminal']], 'boş /btw ve başka sohbetinkiler gelmez');
+  assert.equal(ilk.j.ogeler[0].t, 'btw', 'zamanına göre yerleşir');
+  assert.equal(terminal[0].yanit, undefined);
+
+  const boyut = fs.statSync(transkriptYol).size;
+  const id = crypto.randomUUID();
+  const izle = akis('', o => o.t === 'btw' && o.id === id && typeof o.yanit === 'string');
+  const r = await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id, soru: 'renk ne?', model: 'haiku' } });
+  assert.equal(r.kod, 200);
+  assert.equal(r.j.yanit, 'Yan yanıt: **renk ne?**', 'fork + diske yazmama + araçsız bayraklarıyla çalıştı');
+  const olaylar = await izle;
+  assert.ok(olaylar.some(o => o.t === 'btw' && o.id === id && o.bekliyor), 'açık sohbette önce "bekliyor" kartı akar');
+  assert.ok(!olaylar.some(o => o.t === 'kullanici' && o.metin?.includes('renk ne?')), 'asıl sohbete istem gitmez');
+  assert.equal(fs.statSync(transkriptYol).size, boyut, 'asıl transkript değişmez');
+  assert.ok(fs.existsSync(path.join(veri, 'yan-sorular', `${oturum}.jsonl`)), 'soru ve yanıt veri klasöründe saklanır');
+
+  const canliyken = await iste(`/api/proje/${alfa}/oturum/${oturum}`);
+  assert.ok(!canliyken.j.ogeler.some(o => o.id === id), 'açık koşu sırasında sorulan, geçmişte değil akışta gelir');
+  assert.equal((await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id, soru: 'tekrar' } })).kod, 409);
+  assert.equal((await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id: 'x', soru: 'a' } })).kod, 400);
+  assert.equal((await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id: crypto.randomUUID(), soru: '  ' } })).kod, 400);
+  assert.equal((await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id: crypto.randomUUID(), soru: 'a', model: 'gpt' } })).kod, 400);
+  assert.equal((await iste(`/api/proje/${alfa}/oturum/00000000-0000-4000-8000-000000000000/yan-soru`, { govde: { id: crypto.randomUUID(), soru: 'a' } })).kod, 404);
+  assert.equal((await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id: crypto.randomUUID(), soru: 'a' }, cerezli: false })).kod, 401);
+  const patlak = await iste(`/api/proje/${alfa}/oturum/${oturum}/yan-soru`, { govde: { id: crypto.randomUUID(), soru: 'patla' } });
+  assert.equal(patlak.j.hata, 'Yan soru patladı', 'Claude hatası kartta görünür');
+
+  await iste(`/api/oturum/${oturum}/kapat`, { govde: {} });
+  await akis('', o => o.t === 'durum' && o.durum === 'kapali');
+  const sonra = await iste(`/api/proje/${alfa}/oturum/${oturum}`);
+  const yanlar = sonra.j.ogeler.filter(o => o.t === 'btw');
+  assert.deepEqual(yanlar.map(o => o.soru), ['terminalden soru', 'renk ne?', 'patla'], 'süreç kapanınca hepsi geçmişte, sırayla');
+  assert.equal(yanlar[1].yanit, 'Yan yanıt: **renk ne?**');
+});
+
 test('ürünler, onları değiştiren sohbete bağlanır (alt ajanlar dahil, transkript büyüdükçe)', async () => {
   const alfaYol = path.join(projeler, 'Alfa');
   const kayit = path.join(claudeDizin, 'projects', alfaYol.replace(/[^a-zA-Z0-9]/g, '-'));

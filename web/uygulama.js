@@ -19,6 +19,10 @@ function h(etiket, oz, ...cocuklar) {
 
 class ApiHata extends Error { constructor(kod, mesaj) { super(mesaj); this.kod = kod; } }
 
+// crypto.randomUUID yalnızca güvenli bağlamda var (localhost/https); yoksa aynı biçimi getRandomValues ile üret.
+const kimlikUret = () => crypto.randomUUID?.()
+  || '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
+
 async function api(yol, govde) {
   const r = await fetch(yol, govde === undefined ? {} : {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kumanda': '1' }, body: JSON.stringify(govde),
@@ -817,7 +821,7 @@ async function resimHazirla(dosya) {
 function sohbetGorunumu(pid, sid) {
   let kaynak = null, isaret = '', canli = null, etkinlik = '', kapandi = false, kuyruk = null;
   let yazilanEl = null, yazilanMetin = '', cizim = 0, gizliSayaci = 0;
-  const araclar = new Map(), izinler = new Map(), ekler = [];
+  const araclar = new Map(), izinler = new Map(), yanSorular = new Map(), ekler = [];
   let mod = localStorage.getItem('kumanda.mod') || 'acceptEdits';
   let model = localStorage.getItem('kumanda.model') || '';
   let efor = localStorage.getItem('kumanda.efor') || '';
@@ -827,7 +831,7 @@ function sohbetGorunumu(pid, sid) {
   const kaydirEl = h('div', { class: 'kaydir' }, akisEl);
   const durumEl = h('div', { class: 'durum-cubugu' });
   const eklerEl = h('div', { class: 'ekler' });
-  const alan = h('textarea', { rows: 1, placeholder: 'Claude\'a yaz…', 'aria-label': 'İstem' });
+  const alan = h('textarea', { rows: 1, placeholder: 'Claude\'a yaz… (/btw ile yan soru)','aria-label': 'İstem' });
   const dosyaGirdi = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
   const modSec = h('select', { 'aria-label': 'İzin modu' }, Object.entries(MOD_ADI).map(([d, a]) => h('option', { value: d }, a)));
   const modelSec = h('select', { 'aria-label': 'Model', title: 'Model ("Model" = Claude Code ayarındaki varsayılan)' }, Object.entries(MODEL_ADI).map(([d, a]) => h('option', { value: d }, a)));
@@ -941,8 +945,41 @@ function sohbetGorunumu(pid, sid) {
     el.append(h('div', { class: 'kucuk sonuk' }, sonuc));
   }
 
+  // /btw yan sorusu: her kimliğin tek kartı vardır; geçmiş, canlı akış ve POST yanıtı aynı kartın içini yeniler.
+  // Gelme sırası ne olursa olsun yanıtlanmış kart "bekliyor"a dönmez.
+  function yanSoruCiz(o) {
+    const eski = yanSorular.get(o.id);
+    if (eski && o.bekliyor && !eski.bekliyor) return;
+    const kart = eski?.kart || h('div', { class: 'yan-soru' });
+    kart.classList.toggle('bekliyor', Boolean(o.bekliyor));
+    const govde = o.bekliyor ? h('div', { class: 'kucuk sonuk' }, 'Yanıtlanıyor… (sohbet bundan etkilenmez)')
+      : o.hata ? h('div', { class: 'yan-hata' }, o.hata)
+        : typeof o.yanit === 'string' ? h('div', { class: 'ileti claude yan-yanit', html: md(o.yanit) })
+          : h('div', { class: 'kucuk sonuk' }, 'Terminalden soruldu. Claude Code yan soruların yanıtını kaydetmiyor.');
+    kart.replaceChildren(
+      h('div', { class: 'yan-bas' }, h('span', { class: 'rozet vurgu' }, '/btw'),
+        o.kaynak === 'terminal' && h('span', { class: 'rozet' }, 'terminal'),
+        o.z && h('span', { class: 'kucuk sonuk' }, new Date(o.z).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }))),
+      h('div', { class: 'yan-metin' }, o.soru), govde);
+    yanSorular.set(o.id, { kart, bekliyor: Boolean(o.bekliyor) });
+    if (!eski) ekle(kart);
+  }
+
+  async function yanSoruGonder(soru) {
+    if (!soru) { bildir('Kullanım: /btw <sorun>'); return; }
+    if (!sid) { bildir('Yan soru için önce sohbeti başlat'); return; }
+    const o = { id: kimlikUret(), z: Date.now(), soru, kaynak: 'kumanda', bekliyor: true };
+    alan.value = ''; boyutla();
+    if (ekler.length) bildir('Yan soruya resim eklenmez; resimler yazma alanında duruyor');
+    yanSoruCiz(o);
+    kaydirEl.scrollTop = kaydirEl.scrollHeight;
+    try { yanSoruCiz(await api(`/api/proje/${pid}/oturum/${sid}/yan-soru`, { id: o.id, soru, model: modelSec.value, efor: eforSec.value })); }
+    catch (x) { if (x.kod !== 401) yanSoruCiz({ ...o, bekliyor: false, hata: x.message }); }
+  }
+
   function ogeCiz(o) {
     switch (o.t) {
+      case 'btw': yanSoruCiz(o); break;
       case 'kullanici':
         ekle(h('div', { class: 'ileti kullanici' }, o.metin, o.resim ? h('div', { class: 'kucuk sonuk' }, `${o.resim} resim eklendi`) : null));
         kaydirEl.scrollTop = kaydirEl.scrollHeight;
@@ -1034,7 +1071,7 @@ function sohbetGorunumu(pid, sid) {
     try {
       const v = await api(`/api/proje/${pid}/oturum/${sid}`);
       if (kapandi) return;
-      araclar.clear(); izinler.clear(); yazilanEl = null; yazilanMetin = '';
+      araclar.clear(); izinler.clear(); yanSorular.clear(); yazilanEl = null; yazilanMetin = '';
       akisEl.replaceChildren();
       if (v.kirpildi) akisEl.append(h('div', { class: 'ileti not' }, 'Daha eski iletiler gösterilmiyor'));
       for (const o of v.ogeler) ogeCiz(o);
@@ -1056,6 +1093,8 @@ function sohbetGorunumu(pid, sid) {
   async function gonder() {
     const metin = alan.value.trim();
     if (!metin && !ekler.length) return;
+    const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(metin);
+    if (btw) { yanSoruGonder((btw[1] || '').trim()); return; }
     gonderDugme.disabled = true;
     try {
       const r = await api(`/api/proje/${pid}/gonder`, { oturum: sid, metin, resimler: ekler.map(e => ({ tur: e.tur, veri: e.veri })), mod, model, efor: eforSec.value });

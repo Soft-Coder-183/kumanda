@@ -47,7 +47,8 @@ export function cevir(s) {
       const metin = kullaniciMetni(icerik).trim();
       const resim = Array.isArray(icerik) ? icerik.filter(b => b.type === 'image').length : 0;
       const komut = /<command-name>([^<]+)<\/command-name>/.exec(metin);
-      if (komut) ogeler.push({ t: 'not', metin: komut[1].trim() });
+      // Terminaldeki /btw transkripte yalnızca boş çağrı olarak düşer; asıl sorular yansoru.mjs'ten gelir.
+      if (komut) { if (komut[1].trim() !== '/btw') ogeler.push({ t: 'not', metin: komut[1].trim() }); }
       else if (/^\[Request interrupted/.test(metin)) ogeler.push({ t: 'not', metin: 'Durduruldu' });
       else if ((metin || resim) && !GIZLI.test(metin)) ogeler.push({ t: 'kullanici', metin, resim });
     }
@@ -87,7 +88,7 @@ export async function gecmisOku(dosya, sinir = Infinity) {
   return { ogeler, kirpildi };
 }
 
-function claudeKomutu() {
+export function claudeKomutu() {
   const c = process.env.KUMANDA_CLAUDE ? JSON.parse(process.env.KUMANDA_CLAUDE) : ayar.claude;
   if (Array.isArray(c) && c.length) return [c[0], c.slice(1)];
   return [typeof c === 'string' && c ? c : 'claude', []];
@@ -107,6 +108,7 @@ class Kosu {
     this.efor = EFORLAR.includes(efor) ? efor : '';
     this.model = null;
     this.gecmisSinir = sinir;   // transkriptin bu bayta kadarki kısmı "geçmiş"; sonrası aşağıdaki olay günlüğünde
+    this.sinirZ = Date.now();   // aynı sınırın zamanı (yan sorular bundan sonrası için olay günlüğünden gelir)
     this.olaylar = [];
     this.sira = 0;
     this.taban = 0;             // günlük en son bu sıra numarasında sıfırlandı
@@ -325,10 +327,14 @@ class Kosu {
     this.#gecici(this.anlik());
   }
 
+  /** /btw yan sorusu: sohbet akışına kalıcı olay olarak düşer (yanıt gelince aynı kimlikle yeniden). */
+  yanSoruYayinla(o) { if (!this.kapali) this.#yayinla({ ...o, t: 'btw' }); }
+
   /** Günlük çok büyüdüyse: bitmiş turlar zaten transkriptte, günlüğü boşaltıp istemcilere geçmişi yeniden yüklet. */
   #yenidenTemellen() {
     try {
       this.gecmisSinir = fs.statSync(path.join(kayitDizini(this.proje), `${this.oturum}.jsonl`)).size;
+      this.sinirZ = Date.now();
       this.olaylar = [];
       this.taban = this.sira;
       this.#gecici({ t: 'yenile' });

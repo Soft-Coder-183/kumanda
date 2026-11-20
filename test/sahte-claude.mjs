@@ -74,7 +74,19 @@ async function tur(metin) {
 }
 
 let sira = Promise.resolve();
-readline.createInterface({ input: process.stdin }).on('line', satir => {
+// /btw yan sorusu (src/yansoru.mjs): tek istem stdin'den, tek JSON sonuç; transkripte hiçbir şey yazılmaz.
+// Bayraklar beklenen gibi değilse yanıt bunu söyler (test yakalasın).
+const yanSoru = arg.includes('--no-session-persistence');
+if (yanSoru) {
+  let girdi = '';
+  process.stdin.setEncoding('utf8').on('data', v => { girdi += v; }).on('end', async () => {
+    const dogru = arg.includes('--fork-session') && arg[arg.indexOf('--tools') + 1] === '' && fs.existsSync(transkript);
+    if (girdi.includes('yavaş')) await bekle(600);
+    yaz(girdi.includes('patla')
+      ? { type: 'result', subtype: 'error_during_execution', is_error: true, result: 'Yan soru patladı' }
+      : { type: 'result', subtype: 'success', is_error: false, result: dogru ? `Yan yanıt: **${girdi.trim()}**` : 'Bayraklar yanlış' });
+  });
+} else readline.createInterface({ input: process.stdin }).on('line', satir => {
   if (!satir.trim()) return;
   const m = JSON.parse(satir);
   if (m.type === 'user') {

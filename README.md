@@ -32,6 +32,9 @@ kumandadır.
   sorarsa seçenekleri görürsün; plan modunda planı onaylarsın.
 - **Mod, model ve effort.** Her sohbette izin modunu (sor, düzenlemelere izin ver, plan…), modeli ve düşünme derinliğini seçersin;
   sohbet sürerken de değişir.
+- **Yan sorular (`/btw`).** `/btw <sorun>` yazarsan Claude sohbetin kopyasında, işini bölmeden ve araç kullanmadan yanıtlar;
+  soru ve yanıt sohbetin içinde saklanır. Terminalde sorduğun `/btw`'lerin soruları da görünür (Claude Code yanıtlarını
+  kaydetmediği için onların yanıtı yoktur).
 - **Resim gönder.** Ekran görüntüsünü ya da fotoğrafı isteme ekle; telefonda küçültülüp gönderilir.
 - **Ürünler, onları üreten sohbete göre.** Her projenin Ürünler sekmesinde dosyalar, onları son değiştiren sohbetin başlığı altında
   durur; üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF

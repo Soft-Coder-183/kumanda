@@ -212,6 +212,12 @@ details.diger .urunler { margin-top: 8px; }
 .ileti.claude th { background: var(--yuzey2); }
 .ileti.not { align-self: center; font-size: 12.5px; color: var(--soluk); }
 .ileti.hata { background: color-mix(in srgb, var(--kotu) 12%, transparent); color: var(--kotu); border-radius: 10px; padding: 9px 12px; white-space: pre-wrap; font-size: 14px; }
+.yan-soru { border: 1px solid var(--cizgi); border-left: 3px solid var(--vurgu); background: var(--yuzey); border-radius: 10px; padding: 9px 12px; display: grid; gap: 6px; max-width: 100%; overflow-wrap: anywhere; }
+.yan-soru.bekliyor { border-left-style: dashed; }
+.yan-bas { display: flex; align-items: center; gap: 6px; }
+.yan-metin { white-space: pre-wrap; font-weight: 550; }
+.yan-yanit { font-size: 14.5px; }
+.yan-hata { color: var(--kotu); font-size: 13.5px; white-space: pre-wrap; }
 .ileti.sonuc { font-size: 12px; color: var(--soluk); border-top: 1px dashed var(--cizgi); padding-top: 6px; }
 .imlec::after { content: "▍"; animation: nabiz 1s steps(2) infinite; color: var(--vurgu); }
 

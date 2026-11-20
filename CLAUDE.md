@@ -19,6 +19,7 @@ https://github.com/Soft-Coder-183/kumanda. Durum: 1.2.0 (2026-11-17); gerçek te
 - `sunucu.mjs`: giriş noktası; komut satırı bayrakları, API yolları, kumanda (7777) ve ürün (7778) sunucuları
 - `src/oturumlar.mjs`: Claude Code süreçleri (stream-json protokolü, izin aktarma, olay günlüğü, transkript okuma)
 - `src/projeler.mjs`: proje keşfi, oturum listesi, ürün taraması, güvenli yol çözümü
+- `src/yansoru.mjs`: `/btw` yan soruları (çatallanmış, kaydedilmeyen, araçsız `claude -p`; saklama; history.jsonl'deki terminal soruları)
 - `src/kimlik.mjs`: şifre (scrypt), cihaz oturumları, giriş sınırı, ürün kökeni biletleri
 - `src/bildirim.mjs`: Web Push (içeriksiz itme); `src/http.mjs`: HTTP yardımcıları; `src/ayar.mjs`: ayar dosyası
 - `web/`: arayüz (`uygulama.js`: görünümler, düzen/gezgin, dosya görüntüleyici ve sözdizimi renklendirici; `stil.css`, `sw.js`);
@@ -57,6 +58,7 @@ https://github.com/Soft-Coder-183/kumanda. Durum: 1.2.0 (2026-11-17); gerçek te
 ## Devir belgesinde
 - Mimari, Güvenlik modeli: kimlik, köken, tünel ya da ürün sunumuna dokunmadan önce
 - Claude Code protokolü: `src/oturumlar.mjs`'e dokunmadan ya da Claude Code güncellenince
+- /btw yan soruları: `src/yansoru.mjs`'e ya da sohbet geçmişinin birleştirilmesine dokunmadan önce
 - Ürün taraması: hangi dosyanın ürün sayıldığı, "ikincil" kuralları
 - Dosya gezgini ve düzen: gezgine, dosya görüntüleyiciye, renklendiriciye ya da kenar çubuklarına dokunmadan önce
 - Geliştirme ortamı ve tuzaklar, Açık işler: yeni işe başlamadan önce

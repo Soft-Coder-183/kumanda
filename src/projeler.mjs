@@ -7,7 +7,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { ayar, ayarKaydet, ayarYukle } from './ayar.mjs';
 
-export const CLAUDE_PROJELER = path.join(process.env.KUMANDA_CLAUDE_DIZIN || path.join(os.homedir(), '.claude'), 'projects');
+export const CLAUDE_DIZIN = process.env.KUMANDA_CLAUDE_DIZIN || path.join(os.homedir(), '.claude');
+export const CLAUDE_PROJELER = path.join(CLAUDE_DIZIN, 'projects');
 
 const kucuk = yol => path.resolve(yol).toLowerCase();
 export const projeKimligi = yol => crypto.createHash('sha1').update(kucuk(yol)).digest('hex').slice(0, 12);

@@ -37,6 +37,7 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 | `sunucu.mjs` | Bayraklar (`--arkaplan`, `--durdur`, `--durum`, `--portlar`, `--sifre-sifirla`), API, `/ac` geçişi, iki sunucu |
 | `src/oturumlar.mjs` | `Kosu` sınıfı (süreç + olay günlüğü), `cevir()` (satır → arayüz öğesi), `gecmisOku()` |
 | `src/projeler.mjs` | `projeleriListele`, `oturumlariListele`, `urunleriListele` + `ikincilleriIsaretle`, `guvenliYol` |
+| `src/yansoru.mjs` | `/btw` yan soruları: çatallanmış, kaydedilmeyen, araçsız Claude çağrısı; saklama; history.jsonl'den terminal soruları |
 | `src/kimlik.mjs` | Şifre, `kumanda`/`urun` türü cihaz oturumları, giriş sınırı, biletler |
 | `src/bildirim.mjs` | VAPID anahtarı, abonelikler, içeriksiz Web Push |
 | `web/uygulama.js` | Bütün arayüz: `h()`, `md()`, düzen (`duzenUygula`, `tutamac`), gezgin (`agacCiz`), görünümler (`projeSayfasi`, `sohbetGorunumu`, `tumUrunler`, `dosyaGorunumu`, `ayarlarSayfasi`), renklendirici (`vurgula`) |
@@ -57,6 +58,7 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 | Bildirim | Sayfa açık değilken "bitti / izin bekliyor" itmesi (cihaz başına Ayarlar'dan açılır) |
 | Ayarlar | Cihaz oturumları, şifre değiştirme, kök dışı klasör ekleme, gizlenen projeler |
 | Dosyalar | Proje klasörü ağacı (VS Code gezgini gibi) ve salt okunur, renklendirilmiş dosya görüntüleyici |
+| Yan sorular | `/btw <soru>`: sohbeti bölmeden yan soru; soru ve yanıt saklanır, terminalde sorulanların soruları da görünür |
 | Düzen | Masaüstünde sürüklenerek boyutlanan/kapanan sol bar ve dosyalar paneli; telefonda kaydırmalı çekmeceler |
 
 ### Proje keşfi
@@ -137,6 +139,21 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 - Başka nesilden ya da günlük sıfırlanmadan önceki işaretle gelen istemciye `yenile` gönderilir; istemci geçmişi yeniden yükler.
 - İstemci sekme gizlenince 15 sn sonra akışı bırakır; sunucu dinleyicisi olmayan koşu için bildirim yollar.
 
+### /btw yan soruları (`src/yansoru.mjs`, 1.3.0)
+- **Claude Code bunları saklamaz** (2.1.329'da bakıldı): terminaldeki `/btw <soru>` transkripte hiç girmez (yalnızca argümansız
+  `/btw` "Usage" çıktısıyla düşer; `cevir()` bunu gizler), soru yalnızca `~/.claude/history.jsonl`'e (`display`, `timestamp` ms,
+  `sessionId`) yazılır, **yanıt hiçbir yere yazılmaz**. Eski yan soruların yanıtları kurtarılamaz.
+- Kumanda'dan sorulan: istem `/btw ` ile başlarsa arayüz `POST /api/proje/:pid/oturum/:sid/yan-soru { id, soru, model, efor }` yollar
+  (asıl sohbete gitmez). Sunucu `claude -p --output-format json --resume <sid> --fork-session --no-session-persistence --tools ""
+  --strict-mcp-config --append-system-prompt <yönerge>` çalıştırır, soruyu stdin'e yazar. Haiku ile denendi: kopya sohbetin
+  bağlamını bilir, ne asıl transkript ne yeni transkript ne de history.jsonl değişir. Aynı anda en çok 3, süre 3 dk.
+- Saklama: `%LOCALAPPDATA%\Kumanda\yan-sorular\<oturum>.jsonl` (`{ id, z, soru, yanit | hata, kaynak, model }`); bekleyenler bellekte.
+- Görüntü: geçmiş ucu yan soruları (kayıtlılar + bekleyenler + history.jsonl'dekiler, `kaynak: 'terminal'`) zamanına göre `t: 'btw'`
+  öğesi olarak araya katar (`arayaKat`). Açık koşu varsa `Kosu.sinirZ`'den sonrakiler geçmişe girmez; onlar koşunun olay günlüğüne
+  (`yanSoruYayinla`) "bekliyor" ve yanıtlı olarak iki kez düşer. Kimliği istemci üretir; arayüz her kimliğe tek kart çizer, yanıtlı
+  kart "bekliyor"a dönmez (geçmiş, akış ve POST yanıtı hangi sırayla gelirse gelsin).
+- history.jsonl yalnızca sona eklenerek büyür: yalnızca yeni kısmı okunur (`terminal.okunan`); dosya kısalırsa baştan.
+
 ## Güvenlik modeli
 
 Tehdit: bu arayüze erişen kişi bilgisayarda Claude aracılığıyla komut çalıştırabilir. Katmanlar:
@@ -152,6 +169,8 @@ Tehdit: bu arayüze erişen kişi bilgisayarda Claude aracılığıyla komut ça
 7. **Dosya içeriği kumanda kökeninde yalnızca veridir:** gezgin uçları içeriği JSON içinde döner (`nosniff`); arayüz onu metin
    düğümü ya da `md()` ile çizer, resmi `data:` adresli `<img>` ile gösterir (SVG `<img>` içinde betik çalıştırmaz). Kumanda
    kökeninde proje dosyası belge olarak açılmaz; "Aç" ürün kökenine gider.
+8. **Yan soru (`/btw`) araçsızdır:** `--tools ""` ve `--strict-mcp-config` ile açılır; soru argüman değil stdin'den gider (kabuk
+   yok, `spawn` dizisi). Kimlik/köken denetimi bütün `/api` gibi; test `kumanda.test.mjs` → "/btw yan sorusu".
 
 Bilinen sınırlar: çerezler port ayırmaz (aynı host'ta kumanda çerezi ürün portuna da gider ama `HttpOnly`'dir ve ürün sunucusu onu
 kullanmaz); bütün ürünler tek kökeni, dolayısıyla `localStorage`'ı paylaşır; `-Herkese` modunda tek koruma şifre ve giriş sınırıdır.
@@ -215,6 +234,8 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
 - Kumanda'nın CSP'si `unsafe-eval` vermez: Playwright'ın `waitForFunction`'ı sayfada çalışmaz; metinli `waitForSelector` kullanılır.
 - Kabukta (`node -e "…"`) ters tırnak içeren metin yazmak bash'te komut yerine geçer ve betiği bozar (2026-11-17); belge
   düzenlemeleri düzenleme aracıyla yapılır.
+- Bash heredoc içindeki `node` betiğinde `'\\''` gibi kaçışlı tırnak arama metni dosyadakiyle eşleşmedi (2026-11-20); kaçış içeren
+  arama/değiştirme düzenleme aracıyla yapılır.
 - Arayüz dosyaları `no-cache` ile sunulur (ETag); arayüz değişikliği için sunucuyu yeniden başlatmak gerekmez, sunucu kodu için gerekir.
 
 ## Açık işler
