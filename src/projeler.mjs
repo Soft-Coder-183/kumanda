@@ -372,7 +372,8 @@ async function tara(proje, altProjeler) {
   }
   const kalan = urunler.filter(u => !at.has(u)).sort((a, b) => b.zaman - a.zaman);
   ikincilleriIsaretle(kalan);
-  return kalan;
+  // Yalnızca son sürümler: aynı ürünün eski sürümleri ve kopyaları listelenmez (dosyalar diskte durur, Kumanda dokunmaz).
+  return kalan.filter(u => u.ikincil !== 'eski sürüm' && u.ikincil !== 'kopya');
 }
 
 const KAYNAK_KLASOR = new Set(['src', 'assets', 'android', 'ios', 'app', 'public', 'static']);
@@ -408,7 +409,7 @@ function ikincilleriIsaretle(urunler) {
   // Sürüm numarası dışında aynı adlı dosyalardan yalnızca en yeni sürüm asıldır.
   const surumGrubu = new Map();
   for (const u of urunler) if (!u.ikincil && SURUM.test(u.ad)) {
-    const k = `${u.tur}|${path.posix.dirname(u.yol)}|${surumAnahtari(u.ad)}`;
+    const k = `${u.tur}|${surumAnahtari(u.ad)}`; // klasör fark etmez: dist/a-1.0.apk ile release/a-1.1.apk aynı ürün
     surumGrubu.set(k, [...(surumGrubu.get(k) || []), u]);
   }
   for (const grup of surumGrubu.values()) if (grup.length > 1) {

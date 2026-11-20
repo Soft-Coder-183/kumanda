@@ -62,7 +62,16 @@ function boyutYaz(b) {
 function sureYaz(ms) {
   if (!ms) return '';
   const sn = Math.round(ms / 1000);
-  return sn < 60 ? `${sn} sn` : `${Math.floor(sn / 60)} dk ${sn % 60} sn`;
+  if (sn < 60) return `${sn} sn`;
+  if (sn < 3600) return `${Math.floor(sn / 60)} dk ${sn % 60} sn`;
+  return `${Math.floor(sn / 3600)} sa ${Math.floor((sn % 3600) / 60)} dk`;
+}
+/** İşin bittiği an: bugünse saat, değilse gün + saat (Claude Code'daki gibi ne zaman bittiği görünsün). */
+function anYaz(z) {
+  if (!z) return '';
+  const t = new Date(z), bugun = new Date().toDateString() === t.toDateString();
+  const saat = t.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  return bugun ? saat : `${t.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })} ${saat}`;
 }
 
 // ───────── küçük Markdown çevirici (önce kaçış, sonra biçim: HTML enjeksiyonu olmaz) ─────────
@@ -288,7 +297,29 @@ function girisGoster() {
 // ───────── iskelet ve yönlendirme ─────────
 let projeler = [];
 let aktif = null; // etkin görünüm (kapat() ile temizlenir)
-let yan, ana, listeEl, aramaEl, gezgin, agacEl, gezginAdEl;
+let yan, ana, listeEl, aramaEl, gezgin, agacEl, gezginAdEl, yeniProjeEl;
+
+/** Sol barda arama kutusunun altında açılan "yeni proje" formu: projeler klasöründe boş klasör açar, yeni sohbete gider. */
+function yeniProjeFormu() {
+  if (!yeniProjeEl.hidden) { yeniProjeEl.hidden = true; return; }
+  const girdi = h('input', { type: 'text', placeholder: 'Proje adı', 'aria-label': 'Yeni proje adı', maxlength: 80 });
+  const dugme = h('button', { class: 'dugme ana kucuk', type: 'submit' }, 'Oluştur');
+  yeniProjeEl.replaceChildren(h('form', { onsubmit: async e => {
+    e.preventDefault();
+    const ad = girdi.value.trim();
+    if (!ad) return;
+    dugme.disabled = true;
+    try {
+      const r = await api('/api/proje-olustur', { ad });
+      yeniProjeEl.hidden = true;
+      await projeleriYenile();
+      location.hash = r.proje ? `#/p/${r.proje.kimlik}/yeni` : '#/';
+    } catch (x) { if (x.kod !== 401) bildir(x.message); } finally { dugme.disabled = false; }
+  } }, girdi, dugme),
+  h('div', { class: 'kucuk sonuk' }, 'Projeler klasöründe boş bir klasör açılır; ardından ilk sohbeti başlatırsın.'));
+  yeniProjeEl.hidden = false;
+  girdi.focus();
+}
 
 // ───────── düzen: sol bar (projeler) ve gezgin (dosyalar) ─────────
 // Masaüstünde ikisi de kenarından sürüklenerek genişler/daralır; eşiğin altına sürüklenince kapanır. ☰ ve Dosyalar
@@ -364,7 +395,9 @@ function iskelet() {
       h('a', { class: 'dugme kucuk', href: '#/urunler' }, 'Ürünler'),
       h('a', { class: 'dugme simge duz', href: '#/ayarlar', title: 'Ayarlar', 'aria-label': 'Ayarlar' }, '⚙'),
       h('button', { class: 'dugme simge duz yan-kapat', type: 'button', title: 'Proje listesini kapat (Ctrl+B)', 'aria-label': 'Proje listesini kapat', onclick: yanDegistir }, '«')),
-    h('div', { class: 'ara' }, aramaEl),
+    h('div', { class: 'ara' }, aramaEl,
+      h('button', { class: 'dugme simge kucuk', type: 'button', title: 'Yeni proje', 'aria-label': 'Yeni proje', onclick: () => yeniProjeFormu() }, '＋')),
+    yeniProjeEl = h('div', { class: 'yeni-proje', hidden: true }),
     h('div', { class: 'kaydir' }, listeEl),
     tutamac('tutamac', { baslangic: () => duzen.yanGen, ayarla: yanAyarla }));
   agacEl = h('div', { class: 'agac', role: 'tree', 'aria-label': 'Proje dosyaları' });
@@ -511,7 +544,8 @@ function projeleriCiz() {
   listeEl.replaceChildren(...gorunen.map(p => {
     const durum = p.canli.includes('bekliyor') ? 'bekliyor' : p.canli.includes('calisiyor') ? 'calisiyor' : p.canli.length ? 'hazir' : '';
     const bilgi = [p.sonEtkinlik ? goreliZaman(p.sonEtkinlik) : 'henüz sohbet yok', p.urunSayisi ? `${p.urunSayisi} ürün` : null].filter(Boolean).join(' · ');
-    return h('a', { class: `satir${p.kimlik === secili ? ' secili' : ''}`, href: `#/p/${p.kimlik}` },
+    // Proje seçilince doğrudan son sohbet açılır (#/p/<pid>/son); sohbetteki geri oku projenin sohbetler sekmesine gider.
+    return h('a', { class: `satir${p.kimlik === secili ? ' secili' : ''}`, href: `#/p/${p.kimlik}/son` },
       h('span', { class: `nokta ${durum}`, title: durum === 'bekliyor' ? 'Yanıtını bekliyor' : durum === 'calisiyor' ? 'Çalışıyor' : '' }),
       h('div', { class: 'govde' }, h('div', { class: 'ad' }, p.ad), h('div', { class: 'bilgi' }, bilgi)));
   }));
@@ -544,12 +578,23 @@ function yonlendir() {
   if (p[0] === 'p' && p[1]) {
     if (p[2] === 's' && p[3]) aktif = sohbetGorunumu(p[1], p[3]);
     else if (p[2] === 'yeni') aktif = sohbetGorunumu(p[1], null);
+    else if (p[2] === 'son') { sonSohbeteGit(p[1]); return; }
     else if (p[2] === 'd' && dosya) aktif = dosyaGorunumu(p[1], dosya);
     else aktif = projeSayfasi(p[1], p[2] === 'urunler' ? 'urunler' : 'sohbetler');
   } else if (p[0] === 'urunler') aktif = tumUrunler();
   else if (p[0] === 'ayarlar') aktif = ayarlarSayfasi();
   else ana.replaceChildren(h('div', { class: 'orta sonuk' }, 'Soldan bir proje seç ya da Ürünler\'e bak.'));
   projeleriCiz();
+}
+
+/** #/p/<pid>/son: projenin en son sohbetini açar (yoksa sohbetler sekmesi). Adres yerinde değiştirilir; geri tuşu döngüye girmez. */
+async function sonSohbeteGit(pid) {
+  ana.replaceChildren(h('div', { class: 'orta sonuk' }, 'Yükleniyor…'));
+  let hedef = `#/p/${pid}`;
+  try { const v = await api(`/api/proje/${pid}`); if (v.oturumlar[0]) hedef = `#/p/${pid}/s/${v.oturumlar[0].kimlik}`; } catch { /* sohbetler sekmesi hatayı gösterir */ }
+  if (location.hash !== `#/p/${pid}/son`) return; // bu arada başka yere gidildi
+  history.replaceState(null, '', hedef);
+  yonlendir();
 }
 
 // ───────── proje sayfası ─────────
@@ -826,7 +871,7 @@ function sohbetGorunumu(pid, sid) {
   let mod = localStorage.getItem('kumanda.mod') || 'acceptEdits';
   let model = localStorage.getItem('kumanda.model') || '';
   let efor = localStorage.getItem('kumanda.efor') || '';
-  let eforAyari = null, gecmisSon = null; // Claude Code'un effort ayarları; transkriptteki son isteğin { efor, model }'i
+  let eforAyari = null, gecmisSon = null, genelLimit = null; // Claude Code'un effort ayarları; transkriptteki son isteğin { efor, model }'i
 
   // Gönderilmemiş istem sohbet başına saklanır: başka sohbete geçip dönünce yerinde durur.
   const taslakAnahtari = () => `kumanda.taslak.${pid}.${sid || 'yeni'}`;
@@ -1040,7 +1085,8 @@ function sohbetGorunumu(pid, sid) {
       case 'sonuc':
         bekleyenAraclariKapat();
         if (o.hata) ekle(h('div', { class: 'ileti hata' }, o.hata));
-        else if (!o.kesildi) ekle(h('div', { class: 'ileti sonuc' }, ['Tamamlandı', sureYaz(o.sure)].filter(Boolean).join(' · ')));
+        else if (!o.kesildi) ekle(h('div', { class: 'ileti sonuc', title: o.z ? new Date(o.z).toLocaleString('tr-TR') : '' },
+          [o.sure ? `${sureYaz(o.sure)} çalıştı` : 'Tamamlandı', anYaz(o.z) && `bitti ${anYaz(o.z)}`].filter(Boolean).join(' · ')));
         break;
       default: break;
     }
@@ -1069,13 +1115,18 @@ function sohbetGorunumu(pid, sid) {
     durdurDugme.hidden = !calisiyor;
     simdiDugme.hidden = !calisiyor;
     const sol = d === 'calisiyor' ? `${etkinlik || 'Çalışıyor'}…` : d === 'bekliyor' ? 'Yanıtını bekliyor' : d === 'hazir' ? 'Hazır' : '';
-    const l = canli?.limit;
+    // Kullanım yüzdesi istekten sonra gelir; açık süreç yokken sunucunun sakladığı son değer gösterilir. Sıfırlanma anı
+    // geçmiş pencere eskidir, gösterilmez.
+    const l = canli?.limit || genelLimit;
+    const gecerli = sifir => !sifir || sifir * 1000 > Date.now();
     // Effort: son API isteğinin gerçekte kullandığı (Claude Code transkripte yazar); seçici ise sıradaki istemi gösterir.
     const son = canli?.son || gecmisSon;
     const sag = [(canli?.model || son?.model)?.replace(/^claude-/, ''), son?.efor ? `effort ${EFOR_KISA[son.efor] || son.efor}` : null,
-      l?.bes != null ? `5 sa %${Math.round(l.bes * 100)}` : null, l?.yedi != null ? `hafta %${Math.round(l.yedi * 100)}` : null].filter(Boolean).join(' · ');
+      l?.bes != null && gecerli(l.besSifir) ? `5 sa %${Math.round(l.bes * 100)}` : null,
+      l?.yedi != null && gecerli(l.yediSifir) ? `hafta %${Math.round(l.yedi * 100)}` : null].filter(Boolean).join(' · ');
+    const sifirlanma = [l?.besSifir && `5 saatlik pencere ${anYaz(l.besSifir * 1000)}`, l?.yediSifir && `haftalık ${anYaz(l.yediSifir * 1000)}`].filter(Boolean).join(', ');
     durumEl.replaceChildren(d && d !== 'kapali' ? h('span', { class: `nokta ${d}` }) : '', h('span', {}, sol), h('span', { class: 'bos' }),
-      h('span', { title: 'Model · son isteğin effort\'u · 5 saatlik ve haftalık kullanım' }, sag));
+      h('span', { title: `Model · son isteğin effort'u · 5 saatlik ve haftalık kullanım${sifirlanma ? `. Sıfırlanma: ${sifirlanma}` : ''}${l?.z ? ` (son ölçüm ${anYaz(l.z)})` : ''}` }, sag));
     eforEtiketle();
     if (canli?.mod && d !== 'kapali' && modSec.value !== canli.mod) modSec.value = canli.mod;
     // Başka bir cihazdan değiştirildiyse göster (yalnızca açık süreçte; kapalıysa sıradaki istem bu cihazın seçimiyle açılır).
@@ -1127,6 +1178,7 @@ function sohbetGorunumu(pid, sid) {
       bekleyenAraclariKapat();
       canli = v.canli;
       gecmisSon = v.son || null;
+      genelLimit = v.limit || null;
       durumCiz();
       kaydirEl.scrollTop = kaydirEl.scrollHeight;
     } catch (x) {

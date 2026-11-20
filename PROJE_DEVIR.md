@@ -65,13 +65,19 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 - Aday: her kökün alt klasörü + bir alt düzeyde Claude Code'un tanıdığı klasörler + `ayar.ekProjeler` + transkriptlerdeki `cwd`'ler.
 - "Tanıdığı" = `~/.claude/projects/<kodlanmış yol>` klasörü var (kodlama: harf/rakam dışı her karakter `-`). Kodlama kayıplıdır, geri
   çevrilemez; bu yüzden kök dışı klasörler ancak transkriptinde `cwd` varsa bulunur, yoksa Ayarlar'dan elle eklenir.
+- **Yeni proje (1.3.0):** `POST /api/proje-olustur { ad }` `ayar.kokler[0]` altında boş klasör açar (tek parçalı, Windows'ta geçerli
+  ad; var olanın üstüne yazmaz, 409). Arayüz: sol bar **＋** → `#/p/<pid>/yeni`. Claude Code kaydı ilk sohbette oluşur.
+- **Proje seçince son sohbet (1.3.0):** sol bardaki bağ `#/p/<pid>/son`; `sonSohbeteGit` `/api/proje/:pid`'in ilk oturumuna
+  `history.replaceState` ile gider (geri tuşu döngüye girmez), sohbet yoksa sohbetler sekmesi. Sohbetteki geri oku `#/p/<pid>`.
 - Kendi kaydı olmayıp içinde aday bulunan klasör kaptır, listelenmez ("Games", "Pocket Apps"). Ev klasörü ve geçici klasörler dışlanır.
 
 ### Ürün taraması (`src/projeler.mjs`)
 - Uzantıya göre tür: web, android, windows, paket, video, belge. `YOKSAY` klasörleri, `.` ile başlayanlar ve `*-unpacked` gezilmez.
 - 6'dan fazla HTML içeren klasör veri dökümü sayılır (yalnızca `index.html` alınır); `/src/` betiği çağıran HTML kaynak şablonudur, atlanır.
-- **İkincil** (listede "Diğer dosyalar" altında): kaynak klasöründeki HTML, 1 MB altı exe, debug APK, aynı boyutlu kopyalar,
-  sürüm numarası dışında aynı adlı dosyaların eskileri. Hiçbir şey silinmez; yalnızca öne çıkarma.
+- **İkincil** (listede "Diğer dosyalar" altında): kaynak klasöründeki HTML, 1 MB altı exe, debug APK, kök dışı arşiv.
+- **Yalnızca son sürüm (1.3.0, kullanıcı isteği):** aynı tür + aynı boyuttaki kopyalar ("kopya") ve sürüm numarası dışında aynı adlı
+  dosyaların eskileri ("eski sürüm"; klasör fark etmez) `urunleriTara` sonunda **listeden çıkarılır**. Kumanda sürüm geçmişi
+  tutmaz; bunlar diskte gerçekten duran eski derleme dosyalarıdır, silinmez.
 - Sonuç proje başına 60 sn önbelleklenir ("Yeniden tara" tazeler). Kullanıcının gizledikleri `ayar.gizliUrunler`'de.
 
 ### Ürün → sohbet eşleşmesi (`urunleriOturumlaraBagla`, 2026-11-16)
@@ -140,6 +146,12 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 - Görüntü = transkriptin `gecmisSinir` baytına kadarki kısmı (geçmiş) + koşunun olay günlüğü. Böylece aynı ileti iki kez çizilmez.
 - Başka nesilden ya da günlük sıfırlanmadan önceki işaretle gelen istemciye `yenile` gönderilir; istemci geçmişi yeniden yükler.
 - İstemci sekme gizlenince 15 sn sonra akışı bırakır; sunucu dinleyicisi olmayan koşu için bildirim yollar.
+- **Tur sonları geçmişte (1.3.0):** transkriptte "tur bitti" satırı yok (`system/turn_duration` yalnızca bazı CLI turlarında); `turSonlari()`
+  her istemden sonraki son öğeye `{ t: 'sonuc', sure: son − istem, z: son }` ekler. Arayüz "X çalıştı · bitti SS:DD" yazar.
+  Transkripti o an terminalde yazılan son tur da "bitti" görünür (bilinen sınır).
+- **Kullanım yüzdesi (1.3.0):** `rate_limit_event` yalnızca bir istekten sonra gelir. Son değer `VERI/limit.json`'da
+  (`sonLimitAl`), geçmiş ucu `limit` döner; arayüz açık koşunun değeri yoksa onu gösterir, `besSifir`/`yediSifir` (sn) geçmişse
+  o pencereyi gizler.
 
 ### /btw yan soruları (`src/yansoru.mjs`, 1.3.0)
 - **Claude Code bunları saklamaz** (2.1.329'da bakıldı): terminaldeki `/btw <soru>` transkripte hiç girmez (yalnızca argümansız

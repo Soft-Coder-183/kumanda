@@ -59,6 +59,7 @@ const yanitlar = {
     son: { efor: 'high', model: 'claude-x' },
   },
   [`/api/proje/${PID}/efor`]: { varsayilan: 'medium', model: 'opus', modeller: { 'claude-opus-5-5': 'high' } },
+  '/api/proje-olustur': { proje: { kimlik: 'cccccccccccc', ad: 'Deneme Projesi' } },
   '/api/cihazlar': { cihazlar: [{ kimlik: 'k1', cihaz: 'Android · Chrome', son: simdi, bu: true }, { kimlik: 'k2', cihaz: 'Windows · Edge', son: simdi - 1e6, bu: false }] },
   [`/api/proje/${PID}/gonder`]: { oturum: SID, nesil: 'n1' },
   [`/api/proje/${PID}/dosyalar`]: { yol: '', kesildi: true, girdiler: [
@@ -146,6 +147,21 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.deepEqual(kok.cocuklar.slice(0, 3).map(c => c.id || c.etiket), ['yan', 'gezgin', 'ana'], 'iskelet (yan + gezgin + ana) kuruldu');
   assert.ok(metinler(kok).includes('Alfa'), 'proje listesi çizildi');
   assert.ok(!metinler(kok).includes('Beta') || true);
+
+  assert.ok(hepsi.some(e => e.etiket === 'a' && e.href === `#/p/${PID}/son`), 'sol barda proje son sohbete gider');
+  await git(`#/p/${PID}/son`);
+  await bekle(30);
+  assert.equal(location.hash, `#/p/${PID}/s/${SID}`, 'son sohbet açıldı');
+  const yeniDugme = hepsi.find(e => e.title === 'Yeni proje');
+  for (const f of yeniDugme.dinleyiciler.click) f(olay(yeniDugme));
+  const yeniAd = hepsi.findLast(e => e.placeholder === 'Proje adı');
+  yeniAd.value = 'Deneme Projesi';
+  const yeniForm = hepsi.findLast(e => e.etiket === 'form' && e.dinleyiciler.submit && hepsi.indexOf(e) > hepsi.indexOf(yeniAd));
+  for (const f of yeniForm.dinleyiciler.submit) await f(olay(yeniForm));
+  await bekle(30);
+  assert.deepEqual(istekler.findLast(i => i.yol === '/api/proje-olustur')?.govde, { ad: 'Deneme Projesi' });
+  assert.equal(location.hash, '#/p/cccccccccccc/yeni', 'yeni projede yeni sohbet açılır');
+  akislar.length = 0; // son sohbet ve yeni sohbet ekranlarının akışları aşağıdaki sayımı etkilemesin
 
   let bas = hepsi.length;
   await git(`#/p/${PID}`);
@@ -246,10 +262,11 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   yolla({ t: 'not', metin: 'Bağlam sıkıştırıldı' });
   yolla({ t: 'hata', metin: 'Bir hata' });
   yolla({ t: 'limit', limit: { bes: 0.95, yedi: 0.5 } }, false);
-  yolla({ t: 'sonuc', hata: null, kesildi: false, sure: 75000 });
+  yolla({ t: 'sonuc', hata: null, kesildi: false, sure: 75000, z: simdi });
   yolla({ t: 'sonuc', hata: 'Kota doldu', kesildi: false });
   yolla({ t: 'sonuc', hata: null, kesildi: true });
-  assert.ok(metinler(kok).includes('Tamamlandı · 1 dk 15 sn'));
+  const saat = new Date(simdi).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  assert.ok(metinler(kok).includes(`1 dk 15 sn çalıştı · bitti ${saat}`), 'süre ve bitiş anı yazılır');
   // /btw yan soruları: terminalden gelen yanıtsız kart, canlı "bekliyor" → yanıt aynı kartı günceller
   assert.ok(metinler(kok).includes('terminal sorusu') && metinler(kok).some(m => m.startsWith('Terminalden soruldu')), 'terminaldeki /btw geçmişte');
   const kartOnce = hepsi.filter(e => e.className.startsWith('yan-soru')).length;

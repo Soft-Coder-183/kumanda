@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ayar } from './ayar.mjs';
+import { VERI, atomikYaz, ayar } from './ayar.mjs';
 import { CLAUDE_DIZIN, kayitDizini, oturumDosyasi, kullaniciMetni } from './projeler.mjs';
 
 export const MODLAR = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'];
@@ -83,9 +83,38 @@ export async function gecmisOku(dosya, sinir = Infinity) {
     if (!satir.includes('"type":"user"') && !satir.includes('"type":"assistant"') && !satir.includes('compact_boundary')) continue;
     try { ogeler.push(...cevir(JSON.parse(satir))); } catch { /* yarım ya da bozuk satır */ }
   }
+  ogeler = turSonlari(ogeler);
   const kirpildi = bas > 0 || ogeler.length > GECMIS_OGE;
   if (ogeler.length > GECMIS_OGE) ogeler = ogeler.slice(-GECMIS_OGE);
   return { ogeler, kirpildi };
+}
+
+/** Transkriptte "tur bitti" satırı yok: her istemden sonraki son öğeye, canlı akıştaki gibi bir "sonuç" öğesi eklenir
+ *  (süre = istemden son öğeye; zaman = işin bittiği an). Claude Code'daki "çalıştı / bitti" bilgisinin karşılığı. */
+function turSonlari(ogeler) {
+  const sonuc = [];
+  let bas = 0, son = 0, icerik = false, durduruldu = false;
+  const kapat = () => {
+    if (bas && icerik && son >= bas) sonuc.push({ t: 'sonuc', hata: null, kesildi: durduruldu, sure: son - bas, z: son });
+    bas = 0; icerik = false; durduruldu = false;
+  };
+  for (const o of ogeler) {
+    if (o.t === 'kullanici') { kapat(); bas = o.z || 0; son = bas; }
+    else if (o.z) { son = o.z; if (o.t !== 'not') icerik = true; durduruldu = o.t === 'not' && o.metin === 'Durduruldu'; }
+    sonuc.push(o);
+  }
+  kapat();
+  return sonuc;
+}
+
+// Abonelik kullanımı yalnızca bir istekten sonra (rate_limit_event) gelir; son bilinen değer saklanır ki açık süreç
+// yokken de görünsün.
+const LIMIT_DOSYA = path.join(VERI, 'limit.json');
+let sonLimit = (() => { try { return JSON.parse(fs.readFileSync(LIMIT_DOSYA, 'utf8')); } catch { return null; } })();
+export const sonLimitAl = () => sonLimit;
+function limitKaydet(limit) {
+  sonLimit = { ...limit, z: Date.now() };
+  try { atomikYaz(LIMIT_DOSYA, JSON.stringify(sonLimit)); } catch { /* yazılamadı: bellekte kalsın */ }
 }
 
 /** Transkriptteki son ana API isteğinin modeli ve effort'u. Claude Code her isteği `api-request` satırı olarak yazar
@@ -298,7 +327,9 @@ class Kosu {
       case 'rate_limit_event': {
         const b = m.rate_limit_info || {};
         const p = b.unifiedWindows || {};
-        this.limit = { durum: b.status, bes: p.five_hour?.utilization ?? null, yedi: p.seven_day?.utilization ?? null, sifirlanma: b.resetsAt || null };
+        this.limit = { durum: b.status, bes: p.five_hour?.utilization ?? null, yedi: p.seven_day?.utilization ?? null, sifirlanma: b.resetsAt || null,
+          besSifir: p.five_hour?.resetsAt || null, yediSifir: p.seven_day?.resetsAt || null };
+        limitKaydet(this.limit);
         this.#gecici({ t: 'limit', limit: this.limit });
         break;
       }

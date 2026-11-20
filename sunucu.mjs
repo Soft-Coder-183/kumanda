@@ -12,7 +12,7 @@ import { ayar, ayarIzle, ayarKaydet, ayarYukle, atomikYaz, KOK, VERI } from './s
 import { HttpHata, Yonlendirici, cerezler, cerezYaz, dosyaGonder, duzMetin, istekBilgisi, json, jsonOku, yonlendir } from './src/http.mjs';
 import * as kimlik from './src/kimlik.mjs';
 import { dosyaOku, guvenliYol, klasorListele, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele, urunleriOturumlaraBagla } from './src/projeler.mjs';
-import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, eforAyarlari, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi, sonIstek } from './src/oturumlar.mjs';
+import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, eforAyarlari, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi, sonIstek, sonLimitAl } from './src/oturumlar.mjs';
 import * as bildirim from './src/bildirim.mjs';
 import { arayaKat, yanSoruSor, yanSoruVar, yanSorular } from './src/yansoru.mjs';
 
@@ -209,6 +209,27 @@ api.ekle('GET', '/api/urunler', async ({ res, url }) => {
   json(res, 200, { gruplar });
 });
 
+// Windows'ta klasör adı olabilecek, tek parçalı ad: yol ayırıcı, yasak karakter, nokta ile başlama/bitme, ayrılmış ad yok.
+const gecerliKlasorAdi = ad => Boolean(ad) && ad.length <= 80 && !/[<>:"/\\|?*\u0000-\u001f]/.test(ad) && !/^\./.test(ad)
+  && !/[. ]$/.test(ad) && !/^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(ad);
+const YANLIS_AD = 'Geçersiz proje adı (en çok 80 karakter; / \\ : * ? " < > | olmaz, nokta ile başlayıp bitemez)';
+
+// Yeni proje: ilk kök klasörün altında boş bir klasör açar; Claude Code ilk sohbette onu tanır.
+api.ekle('POST', '/api/proje-olustur', async ({ req, res }) => {
+  const { ad } = await jsonOku(req, 4096);
+  const temiz = typeof ad === 'string' ? ad.trim() : '';
+  if (!gecerliKlasorAdi(temiz)) {
+    throw new HttpHata(400, YANLIS_AD);
+  }
+  const kok = ayar.kokler[0];
+  if (!kok || !fs.existsSync(kok)) throw new HttpHata(400, 'Projeler klasörü yok (ayar.json → kokler)');
+  const yol = path.join(kok, temiz);
+  if (path.dirname(yol) !== path.resolve(kok)) throw new HttpHata(400, 'Geçersiz proje adı');
+  try { fs.mkdirSync(yol); } catch (e) { throw new HttpHata(e.code === 'EEXIST' ? 409 : 500, e.code === 'EEXIST' ? 'Bu adda bir klasör zaten var' : e.message); }
+  const p = (await projeleriListele({ taze: true, gizliler: true })).find(x => x.yol.toLowerCase() === yol.toLowerCase());
+  json(res, 200, { proje: p ? projeOzeti(p) : null });
+});
+
 api.ekle('POST', '/api/proje-ekle', async ({ req, res }) => {
   const { yol } = await jsonOku(req, 4096);
   if (typeof yol !== 'string' || !path.isAbsolute(yol) || !fs.existsSync(yol) || !fs.statSync(yol).isDirectory()) {
@@ -280,7 +301,7 @@ api.ekle('GET', '/api/proje/:pid/oturum/:sid', async ({ res, p }) => {
   // Açık koşu varsa onun başlangıcından sonraki yan sorular canlı akıştan gelir (iki kez çizilmesin, sırası doğru olsun).
   const ilk = gecmis.kirpildi ? gecmis.ogeler.find(o => o.z)?.z || 0 : 0;
   const yanlar = (await yanSorular(p.sid)).filter(y => y.z >= ilk && !(k && !k.kapali && y.z >= k.sinirZ));
-  json(res, 200, { ...gecmis, ogeler: arayaKat(gecmis.ogeler, yanlar), canli: k ? k.anlik() : null, son: dosya ? await sonIstek(dosya) : null });
+  json(res, 200, { ...gecmis, ogeler: arayaKat(gecmis.ogeler, yanlar), canli: k ? k.anlik() : null, son: dosya ? await sonIstek(dosya) : null, limit: sonLimitAl() });
 });
 
 // /btw yan sorusu: sohbetin diske yazılmayan araçsız bir kopyası yanıtlar; asıl sohbet değişmez (src/yansoru.mjs).

@@ -24,8 +24,11 @@ kumandadır.
 ## Neler yapabilirsin?
 
 - **Bütün projelerin tek listede.** Projeler klasöründeki her klasör ve Claude Code'un daha önce çalıştığı her klasör, son etkinliğe
-  göre sıralı. Bir sohbet çalışıyorsa yanında yeşil nokta yanar.
+  göre sıralı. Bir sohbet çalışıyorsa yanında yeşil nokta yanar. Projeye dokununca son sohbeti açılır; **＋** ile yeni proje
+  klasörü açarsın.
 - **Yeni sohbet ya da kaldığın yerden devam.** Terminalde başlattığın oturumlar da listede; telefondan açıp sürdürebilirsin.
+- **Ne kadar çalıştı, ne zaman bitti.** Her turun sonunda çalışma süresi ve bitiş saati; durum çubuğunda model, effort ve
+  abonelik kullanımı (5 saatlik ve haftalık, son bilinen değer).
 - **Canlı yanıt.** Yanıt yazıldıkça akar; Claude'un çalıştırdığı her komut ve düzenlediği her dosya ayrı satırda görünür.
   Tablolar, kod blokları ve listeler biçimli gösterilir.
 - **İzinler telefonunda.** Claude bir komut çalıştırmak isterse kart çıkar: *İzin ver*, *Hep izin ver* ya da *Reddet*. Claude soru
@@ -42,8 +45,8 @@ kumandadır.
 - **Ürünler, onları üreten sohbete göre.** Her projenin Ürünler sekmesinde dosyalar, onları son değiştiren sohbetin başlığı altında
   durur; sohbet ekranında başlığın yanındaki **Ürünler** sekmesi yalnızca o sohbetinkileri açar (yazarken bakabilirsin);
   üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF
-  tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir, eski sürümler ve kopyalar
-  "Diğer dosyalar" altına iner. **Gizle** dediğin dosya silinmez: aynı sohbetin altındaki "Gizlediklerin" kutusuna geçer,
+  tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir; aynı ürünün eski sürümleri ve
+  kopyaları listelenmez, yardımcı dosyalar "Diğer dosyalar" altına iner. **Gizle** dediğin dosya silinmez: aynı sohbetin altındaki "Gizlediklerin" kutusuna geçer,
   **Göster** ile geri gelir; **Gizlenenlerin hepsini göster** hepsini birden geri alır.
 - **Proje dosyaları, VS Code'daki gibi.** Klasör düğmesi (`Ctrl+Shift+E`) projeyi ağaç olarak açar; dosyalar satır numaralı ve
   renklendirilmiş görünür, Markdown önizlemeli, resimler doğrudan. Yalnızca görüntüleme; nokta ile başlayan dosyalar (`.env`…)
