@@ -272,7 +272,8 @@ api.ekle('GET', '/api/proje/:pid/oturum/:sid', async ({ res, p }) => {
   const k = kosuBul(p.sid);
   const dosya = await oturumDosyasi(proje, p.sid);
   if (!dosya && !k) throw new HttpHata(404, 'Oturum bulunamadı');
-  const gecmis = dosya ? await gecmisOku(dosya, k ? k.gecmisSinir : Infinity) : { ogeler: [], kirpildi: false };
+  // Kapanmış koşu (10 dk bellekte kalır) akış açtırmaz; o zaman bütün transkript geçmiştir.
+  const gecmis = dosya ? await gecmisOku(dosya, k && !k.kapali ? k.gecmisSinir : Infinity) : { ogeler: [], kirpildi: false };
   // Açık koşu varsa onun başlangıcından sonraki yan sorular canlı akıştan gelir (iki kez çizilmesin, sırası doğru olsun).
   const ilk = gecmis.kirpildi ? gecmis.ogeler.find(o => o.z)?.z || 0 : 0;
   const yanlar = (await yanSorular(p.sid)).filter(y => y.z >= ilk && !(k && !k.kapali && y.z >= k.sinirZ));

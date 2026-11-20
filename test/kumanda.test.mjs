@@ -345,6 +345,9 @@ test('süreç kapanınca geçmiş transkriptten okunur; yeni istem oturumu sürd
   assert.equal(canliyken.j.canli.durum, 'hazir');
   await iste(`/api/oturum/${oturum}/kapat`, { govde: {} });
   await akis('', o => o.t === 'durum' && o.durum === 'kapali');
+  // Kapanmış koşu 10 dk bellekte kalır; o sırada açılan sayfa koşunun yazdıklarını transkriptten görmeli (akış açılmaz).
+  const kapaliyken = await iste(`/api/proje/${alfa}/oturum/${oturum}`);
+  assert.ok(kapaliyken.j.ogeler.some(o => o.t === 'kullanici' && o.metin === 'merhaba dünya'), 'kapanmış koşunun yazdıkları geçmişte');
   const eskiNesil = nesil;
   const r = await gonder('devam ediyoruz');
   assert.equal(r.j.oturum, oturum);
