@@ -241,6 +241,16 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   yolla({ t: 'arac', id: 't3', ad: 'Write', girdi: { file_path: 'b.txt', content: 'içerik' } });
   yolla({ t: 'arac', id: 't4', ad: 'Bilinmeyen', girdi: { sayi: 3 } });
   for (const ad of ['Grep', 'Glob', 'WebFetch', 'WebSearch', 'Task', 'Skill', 'TodoWrite']) yolla({ t: 'arac', id: `x-${ad}`, ad, girdi: { pattern: 'p', path: 'C:\\a', todos: [1] } });
+  // peş peşe araçlar tek katlanır grupta: özet sayıları verir, grup kapalı başlar
+  const grup = hepsi.findLast(e => e.className === 'arac-grubu');
+  assert.ok(grup, 'iki ve daha çok araç gruplandı');
+  assert.equal(grup.open, false);
+  assert.ok(hepsi.some(e => e.className === 'arac-oz' && String(e.textContent).startsWith('11 adım: Edit · Bash · Write')), 'grup özeti');
+  assert.ok(hepsi.some(e => e.className === 'arac-grubu tek'), 'tek araç gruplanmadan görünür');
+  const dahaDugme = hepsi.find(e => e.className === 'dugme kucuk daha-eski');
+  for (const f of dahaDugme.dinleyiciler.click) await f(olay(dahaDugme));
+  await bekle(20);
+  assert.ok(istekler.some(i => i.yol === `/api/proje/${PID}/oturum/${SID}?daha`), 'daha eski iletiler istenir');
   yolla({ t: 'izin', istek: 'i1', arac: 't2', ad: 'Bash', girdi: { command: 'npm test' }, aciklama: 'onay gerekir', hep: true });
   yolla({ t: 'durum', durum: 'bekliyor', mod: 'plan', model: 'claude-x', nesil: 'n1', limit: { bes: 0.9, yedi: 0.4 } }, false);
   yolla({ t: 'izin', istek: 'i2', ad: 'AskUserQuestion', girdi: { questions: [{ question: 'Hangisi?', header: 'Seç', multiSelect: false, options: [{ label: 'A', description: 'a' }, { label: 'B' }] }, { question: 'Çoklu?', multiSelect: true, options: [{ label: 'X' }, { label: 'Y' }] }] } });

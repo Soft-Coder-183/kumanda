@@ -60,10 +60,12 @@ export function cevir(s) {
   return ogeler;
 }
 
-const GECMIS_BAYT = 4 * 1024 * 1024, GECMIS_OGE = 400;
+// Varsayılan pencere; "daha eskisi" istenince geniş pencere (araçlar arayüzde gruplandığı için öğe sayısı çok olabilir).
+const PENCERE = { bayt: 12 * 1024 * 1024, oge: 1500 }, GENIS = { bayt: 128 * 1024 * 1024, oge: 50000 };
 
 /** Transkript dosyasının `sinir` baytına kadarki kısmından son öğeleri okur. */
-export async function gecmisOku(dosya, sinir = Infinity) {
+export async function gecmisOku(dosya, sinir = Infinity, daha = false) {
+  const { bayt: GECMIS_BAYT, oge: GECMIS_OGE } = daha ? GENIS : PENCERE;
   let boyut;
   try { boyut = (await fsp.stat(dosya)).size; } catch { return { ogeler: [], kirpildi: false }; }
   const son = Math.min(boyut, sinir);

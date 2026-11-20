@@ -146,6 +146,8 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 - Görüntü = transkriptin `gecmisSinir` baytına kadarki kısmı (geçmiş) + koşunun olay günlüğü. Böylece aynı ileti iki kez çizilmez.
 - Başka nesilden ya da günlük sıfırlanmadan önceki işaretle gelen istemciye `yenile` gönderilir; istemci geçmişi yeniden yükler.
 - İstemci sekme gizlenince 15 sn sonra akışı bırakır; sunucu dinleyicisi olmayan koşu için bildirim yollar.
+- **Araç grupları (1.3.0):** peş peşe `arac` öğeleri `aracGrubu`'nda toplanır (`ekle(el, true)`; başka her öğe grubu kapatır).
+  Tek araçlık grup `.tek` (özet gizli, açık); ikincide kapanır, özet "N adım: Bash ×6 · Edit". Grup durumu `grupDurumu()`.
 - **Tur sonları geçmişte (1.3.0):** transkriptte "tur bitti" satırı yok (`system/turn_duration` yalnızca bazı CLI turlarında); `turSonlari()`
   her istemden sonraki son öğeye `{ t: 'sonuc', sure: son − istem, z: son }` ekler. Arayüz "X çalıştı · bitti SS:DD" yazar.
   Transkripti o an terminalde yazılan son tur da "bitti" görünür (bilinen sınır).
@@ -275,5 +277,5 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
 - **Bildirim uçtan uca denenmedi:** abonelik https ya da localhost ister; VAPID imzası ve servis çalışanı gerçek cihazda denenmeli.
   `ayar.bildirimIletisim` yer tutucudur; Apple itme servisi geçerli bir `mailto:` isteyebilir.
 - Aynı oturum hem terminalde hem Kumanda'da aynı anda açılırsa iki süreç aynı transkripte yazar; uyarı yok.
-- Geçmiş yalnızca transkriptin son 4 MB / 400 öğesini gösterir; "daha eskisini yükle" yok.
+- Geçmiş varsayılan olarak son 12 MB / 1500 öğe; "Daha eski iletileri yükle" (`?daha`) 128 MB / 50000 öğeye kadar.
 - Sunucu isteyen ürünler (ör. `localhost:3000`'de çalışan uygulamalar) için ters vekil yok.

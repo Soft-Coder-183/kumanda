@@ -956,20 +956,46 @@ function sohbetGorunumu(pid, sid) {
 
   // ── görüntü ──
   const dipte = () => kaydirEl.scrollHeight - kaydirEl.scrollTop - kaydirEl.clientHeight < 120;
-  function ekle(el) {
+  let aracGrubu = null; // peş peşe gelen araç çağrıları tek katlanır satırda toplanır
+  function ekle(el, grup = false) {
+    if (!grup) aracGrubu = null;
     const yapis = dipte();
     if (yazilanEl && yazilanEl.isConnected) akisEl.insertBefore(el, yazilanEl); else akisEl.append(el);
     if (yapis) kaydirEl.scrollTop = kaydirEl.scrollHeight;
     return el;
   }
 
+  // Tek araç eskisi gibi görünür; ikincisi gelince ikisi "Bash ×6 · Edit ×2" özetli kapalı bir grubun içine girer,
+  // gruba basınca tek tek araçlar, onlara basınca komut/çıktı açılır.
   function aracCiz(o) {
     const durum = h('span', { class: 'arac-durum bekle' }, '…');
     const ic = h('div', { class: 'arac-ic' }, aracAyrinti(o.ad, o.girdi));
     const el = h('details', { class: 'arac' },
       h('summary', {}, h('span', { class: 'arac-ad' }, o.ad), h('span', { class: 'arac-oz' }, aracOzeti(o.ad, o.girdi)), durum), ic);
     araclar.set(o.id, { el, ic, durum });
-    ekle(el);
+    if (!aracGrubu || !aracGrubu.el.isConnected) {
+      const ozet = h('span', { class: 'arac-oz' });
+      const grupDurum = h('span', { class: 'arac-durum' });
+      const govde = h('div', { class: 'arac-grubu-ic' });
+      const g = h('details', { class: 'arac-grubu tek', open: true }, h('summary', {}, h('span', { class: 'arac-ad' }, 'Araçlar'), ozet, grupDurum), govde);
+      aracGrubu = { el: g, govde, ozet, grupDurum, sayilar: new Map(), uyeler: [] };
+      ekle(g, true);
+    }
+    const a = aracGrubu;
+    a.uyeler.push(o.id);
+    a.sayilar.set(o.ad, (a.sayilar.get(o.ad) || 0) + 1);
+    a.govde.append(el);
+    if (a.uyeler.length === 2) { a.el.classList.remove('tek'); a.el.open = false; }
+    a.ozet.textContent = `${a.uyeler.length} adım: ${[...a.sayilar].map(([ad, n]) => (n > 1 ? `${ad} ×${n}` : ad)).join(' · ')}`;
+    araclar.get(o.id).grup = a;
+    grupDurumu(a);
+    if (dipte()) kaydirEl.scrollTop = kaydirEl.scrollHeight;
+  }
+  function grupDurumu(a) {
+    const durumlar = a.uyeler.map(id => araclar.get(id)?.durum.className || '');
+    const bekliyor = durumlar.some(d => d.includes('bekle')), hata = durumlar.filter(d => d.includes('hata')).length;
+    a.grupDurum.className = `arac-durum ${bekliyor ? 'bekle' : hata ? 'hata' : 'tamam'}`;
+    a.grupDurum.textContent = bekliyor ? '…' : hata ? `✕${hata > 1 ? hata : ''}` : '✓';
   }
   function aracSonuc(o) {
     const a = araclar.get(o.id);
@@ -977,9 +1003,10 @@ function sohbetGorunumu(pid, sid) {
     a.durum.className = `arac-durum ${o.hata ? 'hata' : 'tamam'}`;
     a.durum.textContent = o.hata ? '✕' : '✓';
     if (o.metin) a.ic.append(h('div', { class: 'etiket' }, o.hata ? 'Hata' : 'Sonuç'), h('pre', { class: `blok${o.hata ? ' hata' : ''}` }, o.metin));
+    if (a.grup) grupDurumu(a.grup);
   }
   function bekleyenAraclariKapat() {
-    for (const a of araclar.values()) if (a.durum.classList.contains('bekle')) { a.durum.className = 'arac-durum'; a.durum.textContent = ''; }
+    for (const a of araclar.values()) if (a.durum.classList.contains('bekle')) { a.durum.className = 'arac-durum'; a.durum.textContent = ''; if (a.grup) grupDurumu(a.grup); }
   }
 
   function izinCiz(o) {
@@ -1165,22 +1192,25 @@ function sohbetGorunumu(pid, sid) {
     };
   }
 
-  async function gecmisYukle() {
+  async function gecmisYukle(daha = false) {
     if (!sid || kuyruk) return;
     kuyruk = [];
     try {
-      const v = await api(`/api/proje/${pid}/oturum/${sid}`);
+      const v = await api(`/api/proje/${pid}/oturum/${sid}${daha === true ? '?daha' : ''}`);
       if (kapandi) return;
-      araclar.clear(); izinler.clear(); yanSorular.clear(); yazilanEl = null; yazilanMetin = '';
+      araclar.clear(); izinler.clear(); yanSorular.clear(); yazilanEl = null; aracGrubu = null;
+      yazilanMetin = '';
+      const ustten = kaydirEl.scrollHeight - kaydirEl.scrollTop; // eskiler yüklenince okunan yer kaymasın
       akisEl.replaceChildren();
-      if (v.kirpildi) akisEl.append(h('div', { class: 'ileti not' }, 'Daha eski iletiler gösterilmiyor'));
+      if (v.kirpildi) akisEl.append(h('button', { class: 'dugme kucuk daha-eski', type: 'button', onclick: () => gecmisYukle(true) },
+        daha === true ? 'Sohbetin tamamı çok uzun; en eski kısmı gösterilmiyor' : 'Daha eski iletileri yükle'));
       for (const o of v.ogeler) ogeCiz(o);
       bekleyenAraclariKapat();
       canli = v.canli;
       gecmisSon = v.son || null;
       genelLimit = v.limit || null;
       durumCiz();
-      kaydirEl.scrollTop = kaydirEl.scrollHeight;
+      kaydirEl.scrollTop = daha === true ? kaydirEl.scrollHeight - ustten : kaydirEl.scrollHeight;
     } catch (x) {
       if (x.kod === 404) akisEl.replaceChildren(h('div', { class: 'bos-durum' }, 'Bu sohbet bulunamadı.'));
       else if (x.kod !== 401) bildir(x.message);

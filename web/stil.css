@@ -228,7 +228,12 @@ details.diger .urunler { margin-top: 8px; }
 .imlec::after { content: "▍"; animation: nabiz 1s steps(2) infinite; color: var(--vurgu); }
 
 details.arac { border: 1px solid var(--cizgi); border-radius: 10px; background: var(--yuzey); font-size: 13.5px; }
-details.arac + details.arac { margin-top: -6px; }
+details.arac + details.arac { margin-top: 6px; }
+.arac-grubu.tek > summary { display: none; } /* tek araç: grup görünmez, araç eskisi gibi */
+details.arac-grubu:not(.tek) { border: 1px dashed var(--cizgi); border-radius: 10px; font-size: 13.5px; }
+details.arac-grubu:not(.tek) > summary { list-style: none; display: flex; gap: 8px; align-items: center; padding: 7px 10px; cursor: pointer; min-width: 0; color: var(--soluk); }
+details.arac-grubu > summary::-webkit-details-marker { display: none; }
+details.arac-grubu:not(.tek) > .arac-grubu-ic { padding: 0 8px 8px; }
 details.arac > summary { list-style: none; display: flex; gap: 8px; align-items: center; padding: 7px 10px; cursor: pointer; min-width: 0; }
 details.arac > summary::-webkit-details-marker { display: none; }
 .arac-ad { font-weight: 650; flex: none; }
