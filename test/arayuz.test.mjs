@@ -56,7 +56,9 @@ const yanitlar = {
     kirpildi: true,
     ogeler: [{ t: 'kullanici', metin: 'selam', resim: 1 }, { t: 'metin', metin: ZENGIN }, { t: 'arac', id: 't0', ad: 'Read', girdi: { file_path: 'C:\\a\\b.txt' } }, { t: 'arac-sonuc', id: 't0', hata: false, metin: 'içerik' }, { t: 'not', metin: '/clear' }, { t: 'btw', id: 'b0', z: simdi, soru: 'terminal sorusu', kaynak: 'terminal' }],
     canli: { t: 'durum', durum: 'calisiyor', mod: 'default', model: 'claude-x', nesil: 'n1', limit: { bes: 0.5, yedi: 0.1 } },
+    son: { efor: 'high', model: 'claude-x' },
   },
+  [`/api/proje/${PID}/efor`]: { varsayilan: 'medium', model: 'opus', modeller: { 'claude-opus-5-5': 'high' } },
   '/api/cihazlar': { cihazlar: [{ kimlik: 'k1', cihaz: 'Android · Chrome', son: simdi, bu: true }, { kimlik: 'k2', cihaz: 'Windows · Edge', son: simdi - 1e6, bu: false }] },
   [`/api/proje/${PID}/gonder`]: { oturum: SID, nesil: 'n1' },
   [`/api/proje/${PID}/dosyalar`]: { yol: '', kesildi: true, girdiler: [
@@ -92,7 +94,8 @@ const tanimla = (ad, deger) => Object.defineProperty(globalThis, ad, { value: de
 tanimla('document', belge);
 tanimla('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 14) Chrome/130', platform: 'Linux', maxTouchPoints: 5 });
 tanimla('matchMedia', () => ({ matches: false }));
-tanimla('localStorage', { getItem: () => null, setItem: () => {} });
+const taslaklar = new Map(); // yalnızca istem taslakları saklanır (öteki ayarlar her görünümde varsayılanla başlasın)
+tanimla('localStorage', { getItem: k => taslaklar.get(k) ?? null, setItem: (k, v) => { if (k.startsWith('kumanda.taslak.')) taslaklar.set(k, v); }, removeItem: k => taslaklar.delete(k) });
 tanimla('location', { hash: '', reload: () => {} });
 tanimla('history', { replaceState: (_, __, h) => { location.hash = h; } });
 tanimla('addEventListener', (t, f) => { (pencere[t] ||= []).push(f); });
@@ -192,9 +195,18 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.ok(!zengin.innerHTML.includes('<script>'), 'HTML kaçırılır');
   assert.equal(akislar.length, 1, 'canlı oturumda akış açıldı');
   assert.ok(istekler.some(i => i.yol === `/api/proje/${PID}/urunler?oturum=${SID}`), 'sohbetin ürünleri istendi');
+  // Sohbet başlığının yanındaki "Ürünler" sekmesi yalnızca bu sohbetin ürünlerini açar.
   const panel = hepsi.slice(bas).find(e => e.className === 'sohbet-urunleri');
-  assert.equal(panel.hidden, false, 'ürünü olan sohbette panel görünür');
-  assert.ok(metinler(panel).some(m => m.startsWith('Bu sohbetin ürünleri')));
+  const sekme = hepsi.slice(bas).find(e => e.className.includes('urun-sekme'));
+  assert.equal(sekme.textContent, `Ürünler (${urunler.length})`, 'sekmede ürün sayısı');
+  assert.equal(panel.hidden, true, 'panel kapalı başlar');
+  for (const f of sekme.dinleyiciler.click) f(olay(sekme));
+  assert.equal(panel.hidden, false, 'sekme paneli açar');
+  assert.ok(metinler(panel).includes('Alfa Sitesi'));
+  // Effort: "varsayılan" seçeneği gerçek değeri, durum çubuğu son isteğin effort'unu yazar.
+  assert.equal(hepsi.slice(bas).find(e => e.etiket === 'option' && e.value === '' && metinler(e)[0]?.startsWith('Effort'))?.textContent, 'Effort: orta (varsayılan)');
+  assert.equal(hepsi.slice(bas).find(e => e.etiket === 'option' && e.value === '' && metinler(e)[0] === 'Model')?.textContent, 'Model: Opus (varsayılan)');
+  assert.ok(metinler(kok).some(m => m === 'x · effort yüksek · 5 sa %50 · hafta %10'), 'durum çubuğunda effort');
   const akis = akislar[0];
   assert.equal(akis.url, `/api/oturum/${SID}/akis`);
   let n = 0;
@@ -259,10 +271,24 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   assert.ok(!istekler.some(i => i.yol === `/api/proje/${PID}/gonder` && i.govde?.metin?.startsWith('/btw')), 'asıl sohbete gitmez');
   assert.equal(sohbetAlani.value, '', 'yazma alanı boşalır');
   assert.ok(hepsi.some(e => e.innerHTML === '<p><strong>yan yanıt</strong></p>'), 'yanıt karta yazılır');
+  // Ctrl+Enter: Claude çalışırken süren turu kesip hemen gönderir
+  sohbetAlani.value = 'acil iş';
+  for (const f of sohbetAlani.dinleyiciler.keydown) await f({ key: 'Enter', ctrlKey: true, preventDefault() {} });
+  await bekle(20);
+  assert.equal(istekler.findLast(i => i.yol === `/api/proje/${PID}/gonder`)?.govde.simdi, true, 'Ctrl+Enter "şimdi" gönderir');
   yolla({ t: 'yenile' }, false);
   await bekle(40);
   yolla({ t: 'durum', durum: 'kapali', mod: 'default', model: 'claude-x', nesil: 'n1', limit: null }, false);
   assert.equal(akis.readyState, 2, 'koşu kapanınca akış bırakılır');
+
+  // gönderilmemiş istem başka sohbete geçince kaybolmaz
+  await git(`#/p/${PID}/yeni`);
+  const taslakAlani = hepsi.findLast(e => e.etiket === 'textarea');
+  taslakAlani.value = 'yarım kalan istem';
+  for (const f of taslakAlani.dinleyiciler.input) f(olay(taslakAlani));
+  await git(`#/p/${PID}`);
+  await git(`#/p/${PID}/yeni`);
+  assert.equal(hepsi.findLast(e => e.etiket === 'textarea').value, 'yarım kalan istem', 'taslak geri geldi');
 
   // yeni sohbet: gönderince oturum kimliği adrese yazılır ve akış açılır
   const once = akislar.length;
@@ -278,6 +304,8 @@ test('arayüz: bütün görünümler ve olay türleri hatasız çizilir', async 
   await bekle(30);
   const gonderilen = istekler.findLast(i => i.yol === `/api/proje/${PID}/gonder`).govde;
   assert.deepEqual([gonderilen.oturum, gonderilen.metin, gonderilen.mod, gonderilen.efor, gonderilen.resimler.length], [null, 'yeni istem', 'acceptEdits', '', 1]);
+  assert.equal(gonderilen.simdi, undefined, 'çalışmayan sohbette Enter sıradan gönderir');
+  assert.equal(taslaklar.size, 0, 'gönderilen istemin taslağı silinir');
   const eforSec = hepsi.findLast(e => e.etiket === 'select' && e['aria-label'] === undefined && e.title?.startsWith('Effort'));
   assert.ok(eforSec, 'effort seçici var');
   akislar.at(-1).onmessage({ data: JSON.stringify({ t: 'durum', durum: 'hazir', mod: 'acceptEdits', efor: '', nesil: 'n1' }), lastEventId: '' });

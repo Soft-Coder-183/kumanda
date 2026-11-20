@@ -31,13 +31,17 @@ kumandadır.
 - **İzinler telefonunda.** Claude bir komut çalıştırmak isterse kart çıkar: *İzin ver*, *Hep izin ver* ya da *Reddet*. Claude soru
   sorarsa seçenekleri görürsün; plan modunda planı onaylarsın.
 - **Mod, model ve effort.** Her sohbette izin modunu (sor, düzenlemelere izin ver, plan…), modeli ve düşünme derinliğini seçersin;
-  sohbet sürerken de değişir.
+  sohbet sürerken de değişir. "Varsayılan" seçiliyken Claude Code ayarındaki gerçek değer yazar; durum çubuğu son isteğin
+  gerçekten hangi effort'la çalıştığını gösterir.
+- **Sıraya koy ya da şimdi gönder.** Claude çalışırken Enter istemi sıraya koyar, `Ctrl+Enter` (ya da "Şimdi gönder") süren işi
+  kesip hemen gönderir. Gönderilmemiş istemin her sohbette ayrı saklanır; sohbet değiştirince kaybolmaz.
 - **Yan sorular (`/btw`).** `/btw <sorun>` yazarsan Claude sohbetin kopyasında, işini bölmeden ve araç kullanmadan yanıtlar;
   soru ve yanıt sohbetin içinde saklanır. Terminalde sorduğun `/btw`'lerin soruları da görünür (Claude Code yanıtlarını
   kaydetmediği için onların yanıtı yoktur).
 - **Resim gönder.** Ekran görüntüsünü ya da fotoğrafı isteme ekle; telefonda küçültülüp gönderilir.
 - **Ürünler, onları üreten sohbete göre.** Her projenin Ürünler sekmesinde dosyalar, onları son değiştiren sohbetin başlığı altında
-  durur; üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF
+  durur; sohbet ekranında başlığın yanındaki **Ürünler** sekmesi yalnızca o sohbetinkileri açar (yazarken bakabilirsin);
+  üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF
   tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir, eski sürümler ve kopyalar
   "Diğer dosyalar" altına iner. **Gizle** dediğin dosya silinmez: aynı sohbetin altındaki "Gizlediklerin" kutusuna geçer,
   **Göster** ile geri gelir; **Gizlenenlerin hepsini göster** hepsini birden geri alır.

@@ -131,8 +131,11 @@ a.oturum-bas:hover .ad { color: var(--vurgu); }
 .proje-grubu .oturum-grubu { padding-left: 12px; border-left: 3px solid var(--vurgu-soluk); }
 details.gizlenen > summary { color: var(--soluk); }
 .sohbet-urunleri { border-bottom: 1px solid var(--cizgi); background: var(--yuzey2); }
-.sohbet-urunleri > summary { cursor: pointer; padding: 8px 16px; font-size: 13.5px; font-weight: 600; max-width: 860px; margin: 0 auto; }
-.sohbet-urunleri-ic { padding: 0 14px 12px; max-width: 860px; margin: 0 auto; max-height: 45dvh; overflow-y: auto; }
+.sohbet-urunleri-ic { padding: 12px 14px; max-width: 860px; margin: 0 auto; max-height: 45dvh; overflow-y: auto; }
+.sohbet-urunleri-ic .bos-durum { padding: 10px 0; }
+.baslik-sekmeli { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.baslik-sekmeli h1 { min-width: 0; }
+.urun-sekme { flex: none; min-height: 30px; padding: 4px 10px; font-size: 13px; }
 .arac-cubugu { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .kutu-arac { display: flex; justify-content: flex-end; margin: 4px 0 2px; }
 .proje-grubu-bas { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
@@ -252,7 +255,7 @@ pre.blok.hata { color: var(--kotu); }
 .yazma-ic { max-width: 860px; margin: 0 auto; background: var(--yuzey); border: 1px solid var(--cizgi); border-radius: 16px; padding: 8px 10px; box-shadow: var(--golge); }
 .yazma textarea { border: 0; background: transparent; resize: none; padding: 4px 4px; max-height: 40dvh; min-height: 28px; outline: none; display: block; }
 .yazma-alt { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-@media (max-width: 520px) { .yazma-alt select { max-width: 44vw; } }
+@media (max-width: 520px) { .yazma-alt select { max-width: 44vw; } .yazma-alt select.efor-sec { max-width: 34vw; } } /* Durdur + Şimdi + Gönder effort'la aynı satıra sığsın */
 .yazma-alt .bos { flex: 1; }
 .yazma-alt select { border-color: transparent; background: var(--yuzey2); }
 .ekler { display: flex; gap: 6px; flex-wrap: wrap; }

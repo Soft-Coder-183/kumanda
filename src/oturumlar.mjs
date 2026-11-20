@@ -7,7 +7,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { ayar } from './ayar.mjs';
-import { kayitDizini, oturumDosyasi, kullaniciMetni } from './projeler.mjs';
+import { CLAUDE_DIZIN, kayitDizini, oturumDosyasi, kullaniciMetni } from './projeler.mjs';
 
 export const MODLAR = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'];
 export const MODELLER = ['', 'fable', 'opus', 'sonnet', 'haiku'];
@@ -88,6 +88,44 @@ export async function gecmisOku(dosya, sinir = Infinity) {
   return { ogeler, kirpildi };
 }
 
+/** Transkriptteki son ana API isteğinin modeli ve effort'u. Claude Code her isteği `api-request` satırı olarak yazar
+ *  (`params.output_config.effort`); "şu an hangi effort'la çalışıyor"un tek güvenilir kaynağı budur. */
+export async function sonIstek(dosya) {
+  let el;
+  try { el = await fsp.open(dosya, 'r'); } catch { return null; }
+  try {
+    const { size } = await el.stat();
+    const bas = Math.max(0, size - 2 * 1024 * 1024);
+    const tampon = Buffer.alloc(size - bas);
+    const { bytesRead } = await el.read(tampon, 0, tampon.length, bas);
+    const satirlar = tampon.subarray(0, bytesRead).toString('utf8').split('\n');
+    for (let i = satirlar.length - 1; i >= 0; i--) {
+      if (!satirlar[i].includes('"api-request"') || !satirlar[i].includes('output_config')) continue;
+      let o;
+      try { o = JSON.parse(satirlar[i]); } catch { continue; }
+      if (o.type !== 'api-request' || (o.querySource && !['sdk', 'repl_main_thread'].includes(o.querySource))) continue;
+      const efor = o.params?.output_config?.effort;
+      if (typeof efor === 'string') return { efor, model: typeof o.params.model === 'string' ? o.params.model : null, z: Date.parse(o.timestamp) || 0 };
+    }
+    return null;
+  } finally { await el.close(); }
+}
+
+/** Claude Code'un effort ayarları (kullanıcı → proje → projenin yerel ayarı; sonraki öncekini ezer). */
+export async function eforAyarlari(proje) {
+  const oku = async f => { try { return JSON.parse(await fsp.readFile(f, 'utf8')) || {}; } catch { return {}; } };
+  const sonuc = { varsayilan: null, model: null, modeller: {} };
+  for (const k of [await oku(path.join(CLAUDE_DIZIN, 'settings.json')), await oku(path.join(proje.yol, '.claude', 'settings.json')),
+    await oku(path.join(proje.yol, '.claude', 'settings.local.json'))]) {
+    if (k.effortLevel && EFORLAR.includes(k.effortLevel)) sonuc.varsayilan = k.effortLevel;
+    if (typeof k.model === 'string' && k.model) sonuc.model = k.model;
+    for (const [m, v] of Object.entries(k.modelSettings && typeof k.modelSettings === 'object' ? k.modelSettings : {})) {
+      if (v?.effortLevel && EFORLAR.includes(v.effortLevel)) sonuc.modeller[m] = v.effortLevel;
+    }
+  }
+  return sonuc;
+}
+
 export function claudeKomutu() {
   const c = process.env.KUMANDA_CLAUDE ? JSON.parse(process.env.KUMANDA_CLAUDE) : ayar.claude;
   if (Array.isArray(c) && c.length) return [c[0], c.slice(1)];
@@ -124,7 +162,10 @@ class Kosu {
     this.kapanma = 0;
     this.sonEtkinlik = Date.now();
     this.hataCikti = '';
+    this.son = null;            // son API isteğinin { efor, model } bilgisi (transkriptten)
+    this.eforOkundu = false;
     this.#baslat(devam);
+    if (devam) this.#sonIstekOku();
   }
 
   get durum() {
@@ -134,7 +175,7 @@ class Kosu {
   }
 
   anlik() {
-    return { t: 'durum', durum: this.durum, mod: this.mod, model: this.model, istenenModel: this.istenenModel, efor: this.efor, limit: this.limit, nesil: this.nesil };
+    return { t: 'durum', durum: this.durum, mod: this.mod, model: this.model, istenenModel: this.istenenModel, efor: this.efor, limit: this.limit, son: this.son, nesil: this.nesil };
   }
 
   #baslat(devam) {
@@ -229,6 +270,7 @@ class Kosu {
           delete o.z;
           this.#yayinla(o);
         }
+        if (m.type === 'assistant' && !this.eforOkundu) { this.eforOkundu = true; this.#sonIstekOku(); }
         break;
       case 'control_request': this.#istek(m); break;
       case 'control_response': {
@@ -247,6 +289,8 @@ class Kosu {
         this.kesmeIstendi = false;
         const hata = m.is_error && !kesildi ? kisalt(String(m.result || m.subtype || 'Hata'), 1500) : null;
         this.#yayinla({ t: 'sonuc', hata, kesildi, sure: m.duration_ms, maliyet: m.total_cost_usd });
+        this.eforOkundu = false;
+        this.#sonIstekOku();
         this.#gecici(this.anlik());
         if (!kesildi) this.#bildir(hata ? 'hata' : 'bitti', hata || this.sonMetin);
         break;
@@ -260,6 +304,14 @@ class Kosu {
       }
       default: break;
     }
+  }
+
+  /** Bu turun API isteğinin effort'unu transkriptten okur; değiştiyse durum çubuğuna yollar. */
+  async #sonIstekOku() {
+    const r = await sonIstek(path.join(kayitDizini(this.proje), `${this.oturum}.jsonl`)).catch(() => null);
+    if (!r || (this.son && r.efor === this.son.efor && r.model === this.son.model && r.z === this.son.z)) return;
+    this.son = r;
+    this.#gecici(this.anlik());
   }
 
   #bildir(tur, metin) {
@@ -405,7 +457,8 @@ export function kosuListesi() {
     .map(k => ({ oturum: k.oturum, proje: k.proje.kimlik, projeAd: k.proje.ad, durum: k.durum }));
 }
 
-export async function gonder(proje, { oturum, metin, resimler, mod, model, efor }) {
+/** simdi: Claude çalışıyorsa süren turu kesip istemi hemen gönderir (Claude Code'daki Ctrl+Enter). */
+export async function gonder(proje, { oturum, metin, resimler, mod, model, efor, simdi }) {
   let k = oturum ? kosular.get(oturum) : null;
   if (k?.kapali) { kosular.delete(oturum); k = null; }
   if (!k) {
@@ -423,6 +476,7 @@ export async function gonder(proje, { oturum, metin, resimler, mod, model, efor 
     if (typeof model === 'string' && model !== k.istenenModel) await k.modelAyarla(model).catch(() => {});
     if (typeof efor === 'string' && efor !== k.efor) await k.eforAyarla(efor).catch(() => {});
   }
+  if (simdi && k.acikTur > 0) await k.kes();
   k.gonder(metin, resimler);
   return k;
 }

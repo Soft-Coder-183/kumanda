@@ -335,8 +335,42 @@ test('effort çalışan oturumda değişir ve varsayılana döner', async () => 
   assert.match(await son('effort bir'), /efor: max/);
   await gonder('effort iki', { efor: 'xhigh' }); // istemle birlikte gelen effort da uygulanır
   assert.match((await akis(`${nesil}:0`, (o, hepsi) => sonucMu(o) && hepsi.some(x => x.t === 'metin' && x.metin.includes('effort iki')))).filter(o => o.t === 'metin').at(-1).metin, /efor: xhigh/);
+  // Şu anki effort, transkriptteki son API isteğinden okunur ve durumla gelir.
+  let sonIstek = null;
+  for (let i = 0; i < 20 && sonIstek?.efor !== 'xhigh'; i++) {
+    sonIstek = (await iste(`/api/proje/${alfa}/oturum/${oturum}`)).j.canli.son;
+    if (sonIstek?.efor !== 'xhigh') await new Promise(c => setTimeout(c, 50));
+  }
+  assert.equal(sonIstek?.efor, 'xhigh', 'son isteğin effort\'u durumda');
+  assert.equal(sonIstek.model, 'claude-sahte');
   assert.equal((await iste(`/api/oturum/${oturum}/mod`, { govde: { efor: '' } })).j.efor, '');
   assert.match(await son('effort üç'), /efor: ayar/, 'boş seçim kullanıcının Claude Code ayarına döndürür');
+});
+
+test('effort ayarları: kullanıcı → proje → yerel ayar katmanları', async () => {
+  yazDosya(path.join(claudeDizin, 'settings.json'), JSON.stringify({ effortLevel: 'medium', model: 'opus', modelSettings: { 'claude-opus-5-5': { effortLevel: 'high' }, x: { effortLevel: 'saçma' } } }));
+  yazDosya(path.join(projeler, 'Alfa', '.claude', 'settings.local.json'), JSON.stringify({ effortLevel: 'low' }));
+  const r = await iste(`/api/proje/${alfa}/efor`);
+  assert.deepEqual(r.j, { varsayilan: 'low', model: 'opus', modeller: { 'claude-opus-5-5': 'high' } });
+  fs.rmSync(path.join(projeler, 'Alfa', '.claude'), { recursive: true, force: true });
+});
+
+test('Ctrl+Enter: çalışırken "şimdi" gönderilen istem süren turu kesip hemen gider', async () => {
+  await gonder('uzun yanıt iki');
+  let gitti = false, bas = -1;
+  const olaylar = await akis('', (o, hepsi) => {
+    const i = hepsi.findIndex(x => x.t === 'metin' && x.metin.includes('hemen bunu'));
+    return i >= 0 && sonucMu(o) && hepsi.indexOf(o) > i;
+  }, {
+    yanEtki: async (o, hepsi) => {
+      if (o.t === 'kullanici' && o.metin === 'uzun yanıt iki') bas = hepsi.length;
+      if (!gitti && bas >= 0 && hepsi.slice(bas).filter(x => x.t === 'yaz').length >= 3) { gitti = true; assert.equal((await gonder('hemen bunu', { simdi: true })).kod, 200); }
+    },
+  });
+  const sonra = olaylar.slice(bas);
+  assert.ok(sonra.some(o => sonucMu(o) && o.kesildi), 'süren tur kesildi');
+  assert.ok(!sonra.some(o => o.t === 'metin' && o.metin.startsWith('kelime kelime')), 'uzun yanıt tamamlanmadı');
+  assert.ok(sonra.some(o => o.t === 'kullanici' && o.metin === 'hemen bunu'));
 });
 
 test('süreç kapanınca geçmiş transkriptten okunur; yeni istem oturumu sürdürür', async () => {

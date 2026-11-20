@@ -52,7 +52,7 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 | Bölüm | Ne yapar |
 |---|---|
 | Projeler | `ayar.kokler` altındaki klasörler + Claude Code'un tanıdığı klasörler; son etkinliğe göre sıralı, canlı durum noktası |
-| Sohbet | Yeni sohbet ya da var olan (terminalde açılmış olanlar dahil) oturuma devam; akan yanıt, araç satırları, resim ekleme |
+| Sohbet | Yeni sohbet ya da var olan (terminalde açılmış olanlar dahil) oturuma devam; akan yanıt, araç satırları, resim ekleme; Ctrl+Enter "şimdi gönder"; istem taslağı sohbet başına `localStorage['kumanda.taslak.<pid>.<oturum ya da yeni>']` |
 | İzinler | Araç izni kartı (İzin ver / Hep izin ver / Reddet), Claude'un soruları (`AskUserQuestion`), plan onayı; mod ve model seçimi |
 | Ürünler | Proje bazında ve toplu liste; web/video/PDF açılır, APK/EXE/ZIP iner; cihaza uyum etiketi; gizleme |
 | Bildirim | Sayfa açık değilken "bitti / izin bekliyor" itmesi (cihaz başına Ayarlar'dan açılır) |
@@ -85,8 +85,10 @@ telefon / başka PC ──https──> Tailscale (serve: 443, 8443) ──> 127.
 - Uçlar: `GET /api/proje/:pid/urunler` → `{ urunler (her biri .oturum), oturumlar: { kimlik: { baslik, zaman } } }`, `?oturum=<kimlik>`
   yalnızca o sohbetin ürünleri; `/api/urunler` her gruba `oturumlar` ekler.
 - Arayüz (`oturumGruplari`): proje → Ürünler sekmesi ve üstteki bütün ürünler sayfası (`tumUrunler`, proje başlığı → sohbet
-  grupları) aynı gruplamayı kullanır; en son ürün çıkaran sohbet üstte. Sohbet ekranının üstünde katlanır "Bu sohbetin ürünleri"
-  (ürün yoksa gizli, tur bitince 1,5 sn sonra yeniden taranır; gizlenenleri göstermez).
+  grupları) aynı gruplamayı kullanır; en son ürün çıkaran sohbet üstte. Sohbet ekranında başlığın yanında **Ürünler (n)** sekmesi
+  (1.3.0; önceden üst çubuğun altında katlanır `<details>` vardı, kullanıcı fark etmedi): üst çubuğun altında, en çok 45dvh,
+  kendi içinde kayan panel açar, yazma alanı görünür kalır. Açık durumu `acikKutular`'da `<pid>|sekme:<oturum>`. Tur bitince
+  1,5 sn sonra yeniden taranır; ürün yoksa panel "henüz ürün yok" der.
 - **Gizleme** (`ayar.gizliUrunler`, dosya silinmez): her grupta üç parça: asıl ürünler, "Diğer dosyalar" (ikincil), "Gizlediklerin"
   (Göster ile geri). Bu yüzden iki liste sayfası da `?gizliler` ile ister (`/api/urunler?gizliler` 1.1.1'de eklendi; önceden bütün
   ürünler sayfasında gizlenen ürün tamamen kayboluyordu).
@@ -191,6 +193,13 @@ kullanmaz); bütün ürünler tek kökeni, dolayısıyla `localStorage`'ı payla
   ayarını ezer, `effortLevel: null` kullanıcının ayarına döndürür. `set_effort` diye bir istek yok (`unsupported_request`).
   `get_settings`'in "effective" alanı bayrak katmanını güvenilir göstermez; doğrulama transkriptteki `api-request` satırının
   `params.output_config.effort` alanından yapılır.
+- **Şu anki effort'un gösterimi (1.3.0):** `sonIstek()` transkriptin son 2 MB'ında geriye doğru son `api-request` satırını
+  (`querySource` `sdk` ya da `repl_main_thread`) bulur → `{ efor, model }`. Koşu bunu turun ilk `assistant` satırında ve `result`'ta
+  okur, `anlik().son` ile durum çubuğuna yollar; geçmiş ucu da `son` döner. "Varsayılan" seçeneğinin etiketi `GET
+  /api/proje/:pid/efor` (`eforAyarlari`: `~/.claude/settings.json` → projenin `.claude/settings.json` → `settings.local.json`;
+  `effortLevel`, `model`, `modelSettings.<tam model>.effortLevel`) ile hesaplanır. Ortam değişkeniyle verilen effort görülmez.
+- **Şimdi gönder (Ctrl+Enter, 1.3.0):** `gonder` ucunda `simdi: true` ve koşu çalışıyorsa önce `interrupt`, sonra istem. Kesilen
+  turun `result`'ı yeni istemin `kullanici` olayından sonra gelebilir. Düz Enter istemi stdin'e yazar; CLI onu sıraya alır.
 - `--include-partial-messages` ile her içerik bloğu ayrı `assistant` satırı olarak, metin parçaları `stream_event` olarak gelir.
 - Yeni oturumda `--session-id <uuid>` ile kimliği biz veririz; `--resume` aynı kimliği ve aynı transkript dosyasını sürdürür.
 - Kısa (8.3) yol içeren çalışma klasöründe (`C:\Users\ADINIZ~1\…` gibi) Claude Code yazmayı "şüpheli yol" diye reddeder; projeler uzun yolla tutulur.
@@ -243,8 +252,11 @@ Kurallar, komutlar ve commit/sürüm uygulaması `CLAUDE.md`'dedir (her oturumda
 - **Arayüz gerçek tarayıcıda kısmen denendi** (2026-11-16): `araclar/ekran-goruntuleri.mjs` başsız Chrome'da (telefon 390 px açık
   tema, masaüstü 1280 px koyu tema) projeler, ürünler, izin kartı ve sohbet ekranlarını hatasız açtı. 1.2.0'da aynı araç gezgini,
   dosya görüntüleyiciyi, kutunun açık kalmasını, sol barın sürüklenip kapanmasını, ☰/Ctrl+B'yi ve sahte dokunma olaylarıyla
-  kaydırmayı da denetliyor. Gerçek telefon klavyesi, iOS Safari ve gerçek parmakla kaydırma (tarayıcının kendi hareketleriyle
-  çakışma) denenmedi.
+  kaydırmayı da denetliyor; 1.3.0'da sohbetin Ürünler sekmesini, `/btw` kartını, istem taslağının geri gelmesini ve durum
+  çubuğundaki effort'u (`KUMANDA_ARA_GORUNTU=<klasör>` verilirse ara görüntüler de alınır). "Kes + hemen
+  gönder" sırası 2026-11-20'de gerçek CLI'de (haiku, 2.1.329) denendi: kesilen tur `error_during_execution`, yeni istem
+  yanıtlandı. Gerçek telefon klavyesi, iOS Safari ve gerçek parmakla kaydırma (tarayıcının kendi hareketleriyle çakışma)
+  denenmedi.
 - **Uzak erişim telefondan denenmedi** (ajan tarafından): `uzak-kur.ps1` kullanıcı tarafından çalıştırıldı (2026-11-16), `serve`
   kuralları doğru (443 → 7777, 8443 → 7778, yalnızca kendi ağ); https adresi bu bilgisayardan yanıt veriyor ve vekil başlıkları
   algılanıyor (`yerel: false`). Telefonda giriş, ürün açma ve `Secure` çerez akışı gözle denenmeli.

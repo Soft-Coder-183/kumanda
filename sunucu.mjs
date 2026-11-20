@@ -12,7 +12,7 @@ import { ayar, ayarIzle, ayarKaydet, ayarYukle, atomikYaz, KOK, VERI } from './s
 import { HttpHata, Yonlendirici, cerezler, cerezYaz, dosyaGonder, duzMetin, istekBilgisi, json, jsonOku, yonlendir } from './src/http.mjs';
 import * as kimlik from './src/kimlik.mjs';
 import { dosyaOku, guvenliYol, klasorListele, oturumDosyasi, oturumlariListele, projeBul, projeGizle, projeleriListele, urunGizle, urunleriListele, urunleriOturumlaraBagla } from './src/projeler.mjs';
-import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi } from './src/oturumlar.mjs';
+import { EFORLAR, MODELLER, MODLAR, bildirimciAyarla, eforAyarlari, gecmisOku, gonder, hepsiniKapat, kosuBul, kosuListesi, sonIstek } from './src/oturumlar.mjs';
 import * as bildirim from './src/bildirim.mjs';
 import { arayaKat, yanSoruSor, yanSoruVar, yanSorular } from './src/yansoru.mjs';
 
@@ -255,6 +255,9 @@ api.ekle('POST', '/api/proje/:pid/urun-gizle', async ({ req, res, p }) => {
   json(res, 200, { tamam: true });
 });
 
+// Claude Code'un effort ayarları: arayüz "Varsayılan" seçeneğinin gerçekte hangi effort olduğunu yazsın diye.
+api.ekle('GET', '/api/proje/:pid/efor', async ({ res, p }) => json(res, 200, await eforAyarlari(await projeAl(p.pid))));
+
 // Dosya gezgini: yalnızca okuma, yalnızca JSON (dosya kumanda kökeninden belge olarak sunulmaz; açmak /ac ile ürün kökeninde).
 api.ekle('GET', '/api/proje/:pid/dosyalar', async ({ res, p, url }) => {
   const v = await klasorListele(await projeAl(p.pid), url.searchParams.get('yol') || '');
@@ -277,7 +280,7 @@ api.ekle('GET', '/api/proje/:pid/oturum/:sid', async ({ res, p }) => {
   // Açık koşu varsa onun başlangıcından sonraki yan sorular canlı akıştan gelir (iki kez çizilmesin, sırası doğru olsun).
   const ilk = gecmis.kirpildi ? gecmis.ogeler.find(o => o.z)?.z || 0 : 0;
   const yanlar = (await yanSorular(p.sid)).filter(y => y.z >= ilk && !(k && !k.kapali && y.z >= k.sinirZ));
-  json(res, 200, { ...gecmis, ogeler: arayaKat(gecmis.ogeler, yanlar), canli: k ? k.anlik() : null });
+  json(res, 200, { ...gecmis, ogeler: arayaKat(gecmis.ogeler, yanlar), canli: k ? k.anlik() : null, son: dosya ? await sonIstek(dosya) : null });
 });
 
 // /btw yan sorusu: sohbetin diske yazılmayan araçsız bir kopyası yanıtlar; asıl sohbet değişmez (src/yansoru.mjs).
@@ -312,7 +315,7 @@ api.ekle('POST', '/api/proje/:pid/gonder', async ({ req, res, p }) => {
   if (g.model != null && !MODELLER.includes(g.model)) throw new HttpHata(400, 'Geçersiz model');
   if (g.efor != null && !EFORLAR.includes(g.efor)) throw new HttpHata(400, 'Geçersiz effort');
   let k;
-  try { k = await gonder(proje, { oturum: g.oturum || null, metin, resimler, mod: g.mod, model: g.model, efor: g.efor }); }
+  try { k = await gonder(proje, { oturum: g.oturum || null, metin, resimler, mod: g.mod, model: g.model, efor: g.efor, simdi: g.simdi === true }); }
   catch (e) { throw new HttpHata(e.message === 'Oturum bulunamadı' ? 404 : 500, e.message); }
   json(res, 200, { oturum: k.oturum, nesil: k.nesil });
 });

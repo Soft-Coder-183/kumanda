@@ -773,7 +773,8 @@ function dosyaGorunumu(pid, yol) {
 const MOD_ADI = { default: 'Her şeyi sor', acceptEdits: 'Düzenlemelere izin', auto: 'Otomatik', plan: 'Plan modu', bypassPermissions: 'Hepsine izin (riskli)' };
 // Seçiciler telefonda dar: varsayılan seçenek tek kelime (ayrıntı title/aria-label'da).
 const MODEL_ADI = { '': 'Model', fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
-const EFOR_ADI = { '': 'Effort', low: 'Effort: düşük', medium: 'Effort: orta', high: 'Effort: yüksek', xhigh: 'Effort: çok yüksek', max: 'Effort: en yüksek' };
+const EFOR_KISA = { low: 'düşük', medium: 'orta', high: 'yüksek', xhigh: 'çok yüksek', max: 'en yüksek' };
+const EFOR_ADI = { '': 'Effort: varsayılan', ...Object.fromEntries(Object.entries(EFOR_KISA).map(([d, a]) => [d, `Effort: ${a}`])) };
 
 function aracOzeti(ad, g = {}) {
   const dosya = y => String(y || '').split(/[\\/]/).pop();
@@ -825,46 +826,88 @@ function sohbetGorunumu(pid, sid) {
   let mod = localStorage.getItem('kumanda.mod') || 'acceptEdits';
   let model = localStorage.getItem('kumanda.model') || '';
   let efor = localStorage.getItem('kumanda.efor') || '';
+  let eforAyari = null, gecmisSon = null; // Claude Code'un effort ayarları; transkriptteki son isteğin { efor, model }'i
+
+  // Gönderilmemiş istem sohbet başına saklanır: başka sohbete geçip dönünce yerinde durur.
+  const taslakAnahtari = () => `kumanda.taslak.${pid}.${sid || 'yeni'}`;
+  const taslak = {
+    oku: () => { try { return localStorage.getItem(taslakAnahtari()) || ''; } catch { return ''; } },
+    yaz: m => { try { if (m.trim()) localStorage.setItem(taslakAnahtari(), m); else localStorage.removeItem(taslakAnahtari()); } catch { /* kota/gizli kip */ } },
+  };
 
   const baslikEl = h('h1', {}, sid ? 'Sohbet' : 'Yeni sohbet');
   const akisEl = h('div', { class: 'sohbet' });
   const kaydirEl = h('div', { class: 'kaydir' }, akisEl);
   const durumEl = h('div', { class: 'durum-cubugu' });
   const eklerEl = h('div', { class: 'ekler' });
-  const alan = h('textarea', { rows: 1, placeholder: 'Claude\'a yaz… (/btw ile yan soru)','aria-label': 'İstem' });
+  const alan = h('textarea', { rows: 1, placeholder: 'Claude\'a yaz… (/btw ile yan soru)', 'aria-label': 'İstem' });
   const dosyaGirdi = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
   const modSec = h('select', { 'aria-label': 'İzin modu' }, Object.entries(MOD_ADI).map(([d, a]) => h('option', { value: d }, a)));
-  const modelSec = h('select', { 'aria-label': 'Model', title: 'Model ("Model" = Claude Code ayarındaki varsayılan)' }, Object.entries(MODEL_ADI).map(([d, a]) => h('option', { value: d }, a)));
-  const eforSec = h('select', { 'aria-label': 'Effort (düşünme derinliği)', title: 'Effort ("Effort" = Claude Code ayarındaki varsayılan). Düşük: hızlı ve az kota, en yüksek: en derin ve en çok kota' },
-    Object.entries(EFOR_ADI).map(([d, a]) => h('option', { value: d }, a)));
+  const modelSecenekleri = Object.entries(MODEL_ADI).map(([d, a]) => h('option', { value: d }, a));
+  const modelSec = h('select', { 'aria-label': 'Model', title: 'Model ("varsayılan" = Claude Code ayarındaki, parantez içinde hangisi olduğu)' }, modelSecenekleri);
+  const eforSecenekleri = Object.entries(EFOR_ADI).map(([d, a]) => h('option', { value: d }, a));
+  const eforSec = h('select', { class: 'efor-sec', 'aria-label': 'Effort (düşünme derinliği)', title: 'Effort ("varsayılan" = Claude Code ayarındaki, parantez içinde hangisi olduğu). Düşük: hızlı ve az kota, en yüksek: en derin ve en çok kota' },
+    eforSecenekleri);
   const durdurDugme = h('button', { class: 'dugme kucuk tehlike', type: 'button', hidden: true, onclick: () => api(`/api/oturum/${sid}/kes`, {}).catch(x => bildir(x.message)) }, 'Durdur');
-  const gonderDugme = h('button', { class: 'dugme ana kucuk', type: 'submit' }, 'Gönder');
+  const simdiDugme = h('button', { class: 'dugme kucuk', type: 'button', hidden: true, title: 'Şimdi gönder: süren işi kesip bu istemi hemen gönder (Ctrl+Enter)', 'aria-label': 'Şimdi gönder', onclick: () => gonder({ simdi: true }) }, 'Şimdi');
+  const gonderDugme = h('button', { class: 'dugme ana kucuk', type: 'submit', title: 'Claude çalışıyorsa istem sıraya girer; kesip hemen göndermek için Ctrl+Enter' }, 'Gönder');
   modSec.value = mod; modelSec.value = model; eforSec.value = efor;
+  alan.value = taslak.oku();
+
+  // "Effort: varsayılan" seçeneği, seçili modelde Claude Code ayarının gerçekte hangi effort olduğunu yazar.
+  function varsayilanEfor() {
+    if (!eforAyari) return null;
+    const modeller = eforAyari.modeller || {};
+    const acikModel = canli && canli.durum !== 'kapali' && (canli.istenenModel || '') === modelSec.value ? canli.model : null;
+    const takma = modelSec.value || eforAyari.model || '';
+    const tam = acikModel || Object.keys(modeller).find(m => takma && (m === takma || m.includes(`-${takma}-`)));
+    return (tam && modeller[tam]) || eforAyari.varsayilan || null;
+  }
+  function eforEtiketle() {
+    const v = varsayilanEfor();
+    eforSecenekleri[0].textContent = v ? `Effort: ${EFOR_KISA[v] || v} (varsayılan)` : EFOR_ADI[''];
+    const m = eforAyari?.model;
+    modelSecenekleri[0].textContent = m ? `Model: ${MODEL_ADI[m] || m.replace(/^claude-/, '')} (varsayılan)` : MODEL_ADI[''];
+  }
 
   const form = h('form', { class: 'yazma', onsubmit: e => { e.preventDefault(); gonder(); } },
     h('div', { class: 'yazma-ic' }, eklerEl, alan,
       h('div', { class: 'yazma-alt' },
         h('button', { class: 'dugme duz kucuk', type: 'button', title: 'Resim ekle', 'aria-label': 'Resim ekle', onclick: () => dosyaGirdi.click() }, '＋'),
-        dosyaGirdi, modSec, modelSec, eforSec, h('span', { class: 'bos' }), durdurDugme, gonderDugme)));
+        dosyaGirdi, modSec, modelSec, eforSec, h('span', { class: 'bos' }), durdurDugme, simdiDugme, gonderDugme)));
 
-  // Bu sohbetin ürettiği/değiştirdiği ürünler (sohbet bitince yeniden taranır; yoksa gizli kalır).
-  const urunPanel = h('details', { class: 'sohbet-urunleri', hidden: true });
+  // Bu sohbetin ürettiği/değiştirdiği ürünler: başlığın yanındaki "Ürünler" sekmesi, üst çubuğun altında açılan panel
+  // (yazma alanı görünür kalır). Sohbet bitince yeniden taranır. Açık/kapalı durumu sohbet başına hatırlanır.
+  const panelAnahtari = `${pid}|sekme:${sid}`;
+  const urunPanel = h('div', { class: 'sohbet-urunleri', hidden: true });
+  const urunDugme = h('button', { class: 'dugme kucuk urun-sekme', type: 'button', hidden: !sid, 'aria-expanded': 'false', title: 'Bu sohbetin ürünleri',
+    onclick: () => urunPaneliAc(urunPanel.hidden) }, 'Ürünler');
+  function urunPaneliAc(acik) {
+    urunPanel.hidden = !acik;
+    urunDugme.classList.toggle('etkin', acik);
+    urunDugme.setAttribute('aria-expanded', String(acik));
+    if (acik) acikKutular.add(panelAnahtari); else acikKutular.delete(panelAnahtari);
+  }
   let urunSayaci = 0;
   async function urunleriYukle(taze) {
     if (!sid || kapandi) return;
     try {
       const v = await api(`/api/proje/${pid}/urunler?oturum=${sid}${taze ? '&taze' : ''}`);
       if (kapandi) return;
-      const acik = urunPanel.open;
-      urunPanel.replaceChildren(h('summary', {}, `Bu sohbetin ürünleri (${v.urunler.length})`),
-        h('div', { class: 'sohbet-urunleri-ic' }, ...urunIzgarasi(pid, v.urunler, () => urunleriYukle(false), `${pid}|s:${sid}`)));
-      urunPanel.open = acik;
-      urunPanel.hidden = !v.urunler.length;
+      urunDugme.textContent = `Ürünler (${v.urunler.length})`;
+      const yer = urunPanel.firstElementChild?.scrollTop; // Göster/Gizle sonrası panel okunan yerde kalsın
+      const ic = h('div', { class: 'sohbet-urunleri-ic' }, v.urunler.length
+        ? urunIzgarasi(pid, v.urunler, () => urunleriYukle(false), `${pid}|s:${sid}`)
+        : h('div', { class: 'bos-durum' }, 'Bu sohbet henüz bir ürün üretmedi. Claude bir dosya yazınca ya da derleyince burada çıkar.'));
+      urunPanel.replaceChildren(ic);
+      if (yer) ic.scrollTop = yer;
     } catch { /* ağ hatası: panel olduğu gibi kalsın */ }
   }
   const urunleriTazele = () => { clearTimeout(urunSayaci); urunSayaci = setTimeout(() => urunleriYukle(true), 1500); };
+  if (sid && acikKutular.has(panelAnahtari)) urunPaneliAc(true);
 
-  ana.replaceChildren(ustCubuk({ baslik: baslikEl, alt: projeAdi(pid), geri: `#/p/${pid}`, pid }), urunPanel, kaydirEl, durumEl, form);
+  const baslikSatiri = h('div', { class: 'baslik-sekmeli' }, baslikEl, urunDugme);
+  ana.replaceChildren(ustCubuk({ baslik: baslikSatiri, alt: projeAdi(pid), geri: `#/p/${pid}`, pid }), urunPanel, kaydirEl, durumEl, form);
 
   // ── görüntü ──
   const dipte = () => kaydirEl.scrollHeight - kaydirEl.scrollTop - kaydirEl.clientHeight < 120;
@@ -969,7 +1012,7 @@ function sohbetGorunumu(pid, sid) {
     if (!soru) { bildir('Kullanım: /btw <sorun>'); return; }
     if (!sid) { bildir('Yan soru için önce sohbeti başlat'); return; }
     const o = { id: kimlikUret(), z: Date.now(), soru, kaynak: 'kumanda', bekliyor: true };
-    alan.value = ''; boyutla();
+    alan.value = ''; boyutla(); taslak.yaz('');
     if (ekler.length) bildir('Yan soruya resim eklenmez; resimler yazma alanında duruyor');
     yanSoruCiz(o);
     kaydirEl.scrollTop = kaydirEl.scrollHeight;
@@ -1024,10 +1067,16 @@ function sohbetGorunumu(pid, sid) {
     const d = canli?.durum;
     const calisiyor = d === 'calisiyor' || d === 'bekliyor';
     durdurDugme.hidden = !calisiyor;
+    simdiDugme.hidden = !calisiyor;
     const sol = d === 'calisiyor' ? `${etkinlik || 'Çalışıyor'}…` : d === 'bekliyor' ? 'Yanıtını bekliyor' : d === 'hazir' ? 'Hazır' : '';
     const l = canli?.limit;
-    const sag = [canli?.model?.replace(/^claude-/, ''), l?.bes != null ? `5 sa %${Math.round(l.bes * 100)}` : null, l?.yedi != null ? `hafta %${Math.round(l.yedi * 100)}` : null].filter(Boolean).join(' · ');
-    durumEl.replaceChildren(d && d !== 'kapali' ? h('span', { class: `nokta ${d}` }) : '', h('span', {}, sol), h('span', { class: 'bos' }), h('span', {}, sag));
+    // Effort: son API isteğinin gerçekte kullandığı (Claude Code transkripte yazar); seçici ise sıradaki istemi gösterir.
+    const son = canli?.son || gecmisSon;
+    const sag = [(canli?.model || son?.model)?.replace(/^claude-/, ''), son?.efor ? `effort ${EFOR_KISA[son.efor] || son.efor}` : null,
+      l?.bes != null ? `5 sa %${Math.round(l.bes * 100)}` : null, l?.yedi != null ? `hafta %${Math.round(l.yedi * 100)}` : null].filter(Boolean).join(' · ');
+    durumEl.replaceChildren(d && d !== 'kapali' ? h('span', { class: `nokta ${d}` }) : '', h('span', {}, sol), h('span', { class: 'bos' }),
+      h('span', { title: 'Model · son isteğin effort\'u · 5 saatlik ve haftalık kullanım' }, sag));
+    eforEtiketle();
     if (canli?.mod && d !== 'kapali' && modSec.value !== canli.mod) modSec.value = canli.mod;
     // Başka bir cihazdan değiştirildiyse göster (yalnızca açık süreçte; kapalıysa sıradaki istem bu cihazın seçimiyle açılır).
     if (canli && d !== 'kapali' && typeof canli.efor === 'string' && eforSec.value !== canli.efor) eforSec.value = canli.efor;
@@ -1077,6 +1126,7 @@ function sohbetGorunumu(pid, sid) {
       for (const o of v.ogeler) ogeCiz(o);
       bekleyenAraclariKapat();
       canli = v.canli;
+      gecmisSon = v.son || null;
       durumCiz();
       kaydirEl.scrollTop = kaydirEl.scrollHeight;
     } catch (x) {
@@ -1090,16 +1140,20 @@ function sohbetGorunumu(pid, sid) {
     }
   }
 
-  async function gonder() {
+  // simdi: Claude çalışıyorsa süren turu kesip hemen gönderir (Claude Code'daki Ctrl+Enter); yoksa istem sıraya girer.
+  async function gonder({ simdi = false } = {}) {
     const metin = alan.value.trim();
     if (!metin && !ekler.length) return;
     const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(metin);
     if (btw) { yanSoruGonder((btw[1] || '').trim()); return; }
     gonderDugme.disabled = true;
+    const calisiyor = canli?.durum === 'calisiyor' || canli?.durum === 'bekliyor';
     try {
-      const r = await api(`/api/proje/${pid}/gonder`, { oturum: sid, metin, resimler: ekler.map(e => ({ tur: e.tur, veri: e.veri })), mod, model, efor: eforSec.value });
+      const r = await api(`/api/proje/${pid}/gonder`, { oturum: sid, metin, resimler: ekler.map(e => ({ tur: e.tur, veri: e.veri })), mod, model, efor: eforSec.value,
+        ...(simdi && calisiyor ? { simdi: true } : {}) });
+      taslak.yaz('');
       alan.value = ''; ekler.length = 0; ekleriCiz(); boyutla();
-      if (!sid) { sid = r.oturum; history.replaceState(null, '', `#/p/${pid}/s/${sid}`); baslikEl.textContent = metin.slice(0, 60) || 'Sohbet'; }
+      if (!sid) { sid = r.oturum; history.replaceState(null, '', `#/p/${pid}/s/${sid}`); baslikEl.textContent = metin.slice(0, 60) || 'Sohbet'; urunDugme.hidden = false; }
       if (r.nesil !== canli?.nesil) { akisKapat(); isaret = ''; }
       akisAc();
     } catch (x) { if (x.kod !== 401) bildir(x.message); }
@@ -1119,9 +1173,11 @@ function sohbetGorunumu(pid, sid) {
     }
     ekleriCiz();
   }
-  alan.addEventListener('input', boyutla);
+  alan.addEventListener('input', () => { boyutla(); taslak.yaz(alan.value); });
   alan.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !DOKUNMATIK) { e.preventDefault(); gonder(); }
+    if (e.key !== 'Enter' || e.isComposing) return;
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); gonder({ simdi: true }); } // dokunmatikte de (donanım klavyesi)
+    else if (!e.shiftKey && !DOKUNMATIK) { e.preventDefault(); gonder(); }
   });
   alan.addEventListener('paste', e => {
     const resimler = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith('image/'));
@@ -1134,6 +1190,7 @@ function sohbetGorunumu(pid, sid) {
   });
   modelSec.addEventListener('change', async () => {
     model = modelSec.value; localStorage.setItem('kumanda.model', model);
+    eforEtiketle();
     if (sid && canli && canli.durum !== 'kapali') { try { await api(`/api/oturum/${sid}/mod`, { model }); } catch (x) { bildir(x.message); } }
   });
   eforSec.addEventListener('change', async () => {
@@ -1160,6 +1217,8 @@ function sohbetGorunumu(pid, sid) {
     akisEl.append(h('div', { class: 'bos-durum' }, `${projeAdi(pid) || 'Bu proje'} klasöründe yeni bir Claude Code sohbeti. Ne yapılsın?`));
     if (!DOKUNMATIK) alan.focus();
   }
+  api(`/api/proje/${pid}/efor`).then(v => { if (!kapandi) { eforAyari = v; eforEtiketle(); } }).catch(() => {});
+  if (alan.value) setTimeout(boyutla, 0); // geri gelen taslak: yazma alanı içeriğine göre büyüsün
   durumCiz();
 
   return { kapat() { kapandi = true; akisKapat(); clearTimeout(gizliSayaci); clearTimeout(cizim); clearTimeout(urunSayaci); document.removeEventListener('visibilitychange', gorunurluk); } };

@@ -51,6 +51,8 @@ async function tur(metin) {
   yaz({ type: 'system', subtype: 'init', session_id: oturum, model: 'claude-sahte', permissionMode: mod, cwd: process.cwd() });
   yaz({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.25 }, seven_day: { utilization: 0.1 } } } });
   kaydet({ type: 'user', message: { role: 'user', content: metin } });
+  // Gerçek CLI her API isteğini transkripte yazar; Kumanda "şu anki effort"u buradan okur.
+  kaydet({ type: 'api-request', querySource: 'sdk', params: { model: 'claude-sahte', output_config: { effort: efor === 'ayar' ? 'medium' : efor } } });
   if (metin.includes('izin')) {
     const komut = /komut:\s*(.+)$/m.exec(metin)?.[1].trim() || 'echo merhaba'; // tanıtım görüntüleri için
     const { id, yanit } = await izinIste('Bash', { command: komut, description: 'Selam ver' },
