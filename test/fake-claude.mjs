@@ -82,11 +82,17 @@ const btw = arg.includes('--no-session-persistence');
 if (btw) {
   let input = '';
   process.stdin.setEncoding('utf8').on('data', v => { input += v; }).on('end', async () => {
-    const right = arg.includes('--fork-session') && arg[arg.indexOf('--tools') + 1] === '' && fs.existsSync(transcript);
-    if (input.includes('slow')) await wait(600);
-    write(input.includes('explode')
+    // Same tools as the chat (no --tools/--strict-mcp-config/--append-system-prompt, which would break the cache reuse);
+    // tools blocked by a PreToolUse hook; the instruction is in front of the question.
+    const settings = JSON.parse(value('--settings') || '{}');
+    const right = arg.includes('--fork-session') && fs.existsSync(transcript) && settings.hooks?.PreToolUse?.[0]?.matcher === '*'
+      && !arg.includes('--tools') && !arg.includes('--strict-mcp-config') && !arg.includes('--append-system-prompt')
+      && input.startsWith('[Side question');
+    const question = input.split('\n\n').pop().trim();
+    if (question.includes('slow')) await wait(600);
+    write(question.includes('explode')
       ? { type: 'result', subtype: 'error_during_execution', is_error: true, result: 'The side question exploded' }
-      : { type: 'result', subtype: 'success', is_error: false, result: right ? `Side reply: **${input.trim()}**` : 'Wrong flags' });
+      : { type: 'result', subtype: 'success', is_error: false, result: right ? `Side reply: **${question}**` : 'Wrong flags' });
   });
 } else readline.createInterface({ input: process.stdin }).on('line', line => {
   if (!line.trim()) return;

@@ -1,7 +1,11 @@
 // /btw side questions. Claude Code does not keep them: for a /btw asked in the terminal only the question lands in
 // ~/.claude/history.jsonl (the prompt history); the answer is written nowhere. Kumanda does two things:
-//  1. A side question asked from Kumanda is answered by a forked, never-saved, tool-less copy of the chat
-//     (`--resume <session> --fork-session --no-session-persistence --tools ""`); the chat and its transcript do not change.
+//  1. A side question asked from Kumanda is answered by a forked, never-saved copy of the chat
+//     (`--resume <session> --fork-session --no-session-persistence`); the chat and its transcript do not change. The copy
+//     sees every earlier prompt and reply. Its flags are kept like the chat's own (same tools, MCP, system prompt, model), so
+//     it reads the chat's prompt cache instead of writing the whole conversation again; tools are blocked by a PreToolUse
+//     hook (src/btw-no-tools.mjs), which unlike --tools "" does not change the cached prefix. Measured with haiku: cache read
+//     ~34k, write ~1k, versus ~17k written without reuse.
 //     The question and answer are kept in the data folder (`btw/<session>.jsonl`).
 //  2. /btw questions asked in the terminal are read from history.jsonl and shown in the same chat (without an answer).
 import { spawn } from 'node:child_process';
@@ -17,8 +21,11 @@ const TIMEOUT = 3 * 60e3;
 const MAX_RUNNING = 3;
 const UUID = /^[0-9a-f-]{36}$/i;
 
-const INSTRUCTION = 'This is a side question (/btw): the user is asking something quick without interrupting the ongoing work. '
-  + 'You cannot use tools; answer briefly and directly from what is already known in this conversation. If you do not know, say so.';
+// Goes in front of the question in the user message (not the system prompt, which would break the cache reuse).
+const INSTRUCTION = '[Side question (/btw): the user asks something quick without interrupting the ongoing work. Tools are '
+  + 'blocked; answer briefly and directly from what is already known in this conversation. If you do not know, say so.]';
+const NO_TOOLS_HOOK = path.join(import.meta.dirname, 'btw-no-tools.mjs').replace(/\\/g, '/');
+const SETTINGS = JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `node "${NO_TOOLS_HOOK}"` }] }] } });
 
 const fileOf = session => path.join(DIR, `${session}.jsonl`);
 const running = new Map(); // session → Map(id → question waiting for its answer)
@@ -87,8 +94,9 @@ export function interleave(items, questions) {
 function run(project, session, question, { model, effort }) {
   return new Promise((resolve, reject) => {
     const [command, prefix] = claudeCommand();
+    // --max-turns: a model that still tries tools gets the hook's refusal and has to answer within a few turns.
     const args = [...prefix, '-p', '--output-format', 'json', '--resume', session, '--fork-session', '--no-session-persistence',
-      '--tools', '', '--strict-mcp-config', '--append-system-prompt', INSTRUCTION,
+      '--permission-mode', 'manual', '--settings', SETTINGS, '--max-turns', '3',
       ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
     const proc = spawn(command, args, { cwd: project.path, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '', err = '';
@@ -105,7 +113,7 @@ function run(project, session, question, { model, effort }) {
       else reject(new Error(String(r?.result || err.trim() || `Claude Code did not answer (code ${code})`).slice(0, 1500)));
     });
     proc.stdin.on('error', () => {});
-    proc.stdin.end(question);
+    proc.stdin.end(`${INSTRUCTION}\n\n${question}`);
   });
 }
 
