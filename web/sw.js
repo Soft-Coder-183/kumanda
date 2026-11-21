@@ -1,15 +1,15 @@
-// Servis çalışanı: yalnızca bildirimler için. İtme içeriksiz gelir; metni kendi çerezimizle sunucudan alırız.
+// Service worker: only for notifications. Pushes arrive without a payload; the text is fetched from the server with our own cookie.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', e => e.waitUntil((async () => {
-  let b = { baslik: 'Kumanda', govde: 'Yeni bir gelişme var.', url: '/', etiket: 'kumanda' };
+  let n = { title: 'Kumanda', body: 'Something new happened.', url: '/', tag: 'kumanda' };
   try {
-    const r = await fetch('/api/bildirim/son', { credentials: 'same-origin' });
-    if (r.ok) b = (await r.json()).bildirim || b;
-  } catch { /* çevrimdışı: genel metinle göster */ }
-  await self.registration.showNotification(b.baslik, {
-    body: b.govde, tag: b.etiket, renotify: true, data: { url: b.url }, icon: '/ikon-192.png', badge: '/ikon-192.png',
+    const r = await fetch('/api/push/last', { credentials: 'same-origin' });
+    if (r.ok) n = (await r.json()).notification || n;
+  } catch { /* offline: show the generic text */ }
+  await self.registration.showNotification(n.title, {
+    body: n.body, tag: n.tag, renotify: true, data: { url: n.url }, icon: '/icon-192.png', badge: '/icon-192.png',
   });
 })()));
 
@@ -17,10 +17,10 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = e.notification.data?.url || '/';
   e.waitUntil((async () => {
-    const pencereler = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (pencereler.length) {
-      pencereler[0].postMessage({ git: url.replace(/^\//, '') });
-      return pencereler[0].focus();
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (windows.length) {
+      windows[0].postMessage({ go: url.replace(/^\//, '') });
+      return windows[0].focus();
     }
     return self.clients.openWindow(url);
   })());

@@ -1,4 +1,4 @@
-// Bağımlılıksız küçük HTTP yardımcıları.
+// Small dependency-free HTTP helpers.
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -20,135 +20,135 @@ const MIME = {
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
-export const mime = dosya => MIME[path.extname(dosya).toLowerCase()] || 'application/octet-stream';
+export const mime = file => MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
 
-export class HttpHata extends Error {
-  constructor(kod, mesaj) { super(mesaj); this.kod = kod; }
+export class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
 }
 
-export async function govdeOku(req, sinir = 30e6) {
-  const parcalar = [];
-  let toplam = 0;
-  for await (const p of req) {
-    toplam += p.length;
-    if (toplam > sinir) throw new HttpHata(413, 'İstek çok büyük');
-    parcalar.push(p);
+export async function readBody(req, limit = 30e6) {
+  const chunks = [];
+  let total = 0;
+  for await (const c of req) {
+    total += c.length;
+    if (total > limit) throw new HttpError(413, 'Request too large');
+    chunks.push(c);
   }
-  return Buffer.concat(parcalar);
+  return Buffer.concat(chunks);
 }
 
-export async function jsonOku(req, sinir) {
-  const govde = await govdeOku(req, sinir);
-  if (!govde.length) return {};
-  try { return JSON.parse(govde.toString('utf8')); } catch { throw new HttpHata(400, 'Geçersiz JSON'); }
+export async function readJson(req, limit) {
+  const body = await readBody(req, limit);
+  if (!body.length) return {};
+  try { return JSON.parse(body.toString('utf8')); } catch { throw new HttpError(400, 'Invalid JSON'); }
 }
 
-export function json(res, kod, veri, baslik = {}) {
-  const govde = JSON.stringify(veri);
-  res.writeHead(kod, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...baslik });
-  res.end(govde);
+export function json(res, status, data, headers = {}) {
+  const body = JSON.stringify(data);
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+  res.end(body);
 }
 
-export function duzMetin(res, kod, m, baslik = {}) {
-  res.writeHead(kod, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...baslik });
-  res.end(m);
+export function plainText(res, status, text, headers = {}) {
+  res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+  res.end(text);
 }
 
-export function yonlendir(res, hedef, baslik = {}) {
-  res.writeHead(302, { Location: hedef, 'Cache-Control': 'no-store', ...baslik });
+export function redirect(res, target, headers = {}) {
+  res.writeHead(302, { Location: target, 'Cache-Control': 'no-store', ...headers });
   res.end();
 }
 
-export function cerezler(req) {
-  const sonuc = {};
-  for (const parca of (req.headers.cookie || '').split(';')) {
-    const i = parca.indexOf('=');
-    if (i > 0) sonuc[parca.slice(0, i).trim()] = decodeURIComponent(parca.slice(i + 1).trim());
+export function cookies(req) {
+  const out = {};
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
   }
-  return sonuc;
+  return out;
 }
 
-export function cerezYaz(ad, deger, { gun = 30, guvenli = false, sil = false } = {}) {
-  const parcalar = [`${ad}=${sil ? '' : encodeURIComponent(deger)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax',
-    `Max-Age=${sil ? 0 : gun * 86400}`];
-  if (guvenli) parcalar.push('Secure');
-  return parcalar.join('; ');
+export function setCookie(name, value, { days = 30, secure = false, remove = false } = {}) {
+  const parts = [`${name}=${remove ? '' : encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax',
+    `Max-Age=${remove ? 0 : days * 86400}`];
+  if (secure) parts.push('Secure');
+  return parts.join('; ');
 }
 
-const yerelAd = ad => ad === 'localhost' || ad === '127.0.0.1' || ad === '[::1]';
+const isLocalName = name => name === 'localhost' || name === '127.0.0.1' || name === '[::1]';
 
-/** İsteğin dışarıdan nasıl göründüğü: tünel arkasında mı, hangi host, https mi. */
-export function istekBilgisi(req) {
+/** How the request looks from outside: behind a tunnel or not, which host, https or not. */
+export function requestInfo(req) {
   const host = req.headers.host || '';
-  let adres;
-  try { adres = new URL(`http://${host}`); } catch { adres = new URL('http://gecersiz'); }
-  const vekilli = Boolean(req.headers['x-forwarded-for'] || req.headers.forwarded || req.headers['cf-connecting-ip']);
-  const uzak = req.socket.remoteAddress || '';
-  const dongu = uzak === '127.0.0.1' || uzak === '::1' || uzak === '::ffff:127.0.0.1';
+  let url;
+  try { url = new URL(`http://${host}`); } catch { url = new URL('http://invalid'); }
+  const proxied = Boolean(req.headers['x-forwarded-for'] || req.headers.forwarded || req.headers['cf-connecting-ip']);
+  const remote = req.socket.remoteAddress || '';
+  const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
   const https = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https'
-    || (vekilli && !adres.port && !yerelAd(adres.hostname));
+    || (proxied && !url.port && !isLocalName(url.hostname));
   return {
-    host, hostAdi: adres.hostname, port: adres.port, https,
-    // "Bu bilgisayarın başında": tünelden gelmeyen, localhost adına yapılmış döngü bağlantısı.
-    yerel: dongu && !vekilli && yerelAd(adres.hostname),
-    istemci: vekilli ? String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']).split(',')[0].trim() : uzak,
+    host, hostname: url.hostname, port: url.port, https,
+    // "Sitting at this computer": a loopback connection to a localhost name that did not come through a tunnel.
+    local: loopback && !proxied && isLocalName(url.hostname),
+    client: proxied ? String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']).split(',')[0].trim() : remote,
   };
 }
 
-/** Dosyayı Range / ETag / HEAD desteğiyle gönderir. */
-export async function dosyaGonder(req, res, dosya, { indir = false, onbellek = 'no-cache', baslik = {} } = {}) {
+/** Sends a file with Range / ETag / HEAD support. */
+export async function sendFile(req, res, file, { download = false, cache = 'no-cache', headers = {} } = {}) {
   let st;
-  try { st = await fsp.stat(dosya); } catch { return duzMetin(res, 404, 'Bulunamadı'); }
-  if (!st.isFile()) return duzMetin(res, 404, 'Bulunamadı');
+  try { st = await fsp.stat(file); } catch { return plainText(res, 404, 'Not found'); }
+  if (!st.isFile()) return plainText(res, 404, 'Not found');
   const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
-  const ortak = {
-    'Content-Type': mime(dosya), 'Accept-Ranges': 'bytes', ETag: etag, 'Cache-Control': onbellek,
-    'Last-Modified': st.mtime.toUTCString(), 'X-Content-Type-Options': 'nosniff', ...baslik,
+  const common = {
+    'Content-Type': mime(file), 'Accept-Ranges': 'bytes', ETag: etag, 'Cache-Control': cache,
+    'Last-Modified': st.mtime.toUTCString(), 'X-Content-Type-Options': 'nosniff', ...headers,
   };
-  if (indir) {
-    const ad = path.basename(dosya);
-    ortak['Content-Disposition'] = `attachment; filename="${ad.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(ad)}`;
+  if (download) {
+    const name = path.basename(file);
+    common['Content-Disposition'] = `attachment; filename="${name.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
   }
-  if (req.headers['if-none-match'] === etag && !req.headers.range) { res.writeHead(304, ortak); return res.end(); }
+  if (req.headers['if-none-match'] === etag && !req.headers.range) { res.writeHead(304, common); return res.end(); }
 
-  let bas = 0, son = st.size - 1, kod = 200;
-  const aralik = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
-  if (aralik && st.size > 0) {
-    if (aralik[1] === '' && aralik[2] !== '') { bas = Math.max(0, st.size - Number(aralik[2])); }
-    else { bas = Number(aralik[1]); if (aralik[2] !== '') son = Math.min(son, Number(aralik[2])); }
-    if (!(bas <= son) || bas >= st.size) {
+  let start = 0, end = st.size - 1, status = 200;
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (range && st.size > 0) {
+    if (range[1] === '' && range[2] !== '') { start = Math.max(0, st.size - Number(range[2])); }
+    else { start = Number(range[1]); if (range[2] !== '') end = Math.min(end, Number(range[2])); }
+    if (!(start <= end) || start >= st.size) {
       res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end();
     }
-    kod = 206;
-    ortak['Content-Range'] = `bytes ${bas}-${son}/${st.size}`;
+    status = 206;
+    common['Content-Range'] = `bytes ${start}-${end}/${st.size}`;
   }
-  ortak['Content-Length'] = st.size === 0 ? 0 : son - bas + 1;
-  res.writeHead(kod, ortak);
+  common['Content-Length'] = st.size === 0 ? 0 : end - start + 1;
+  res.writeHead(status, common);
   if (req.method === 'HEAD' || st.size === 0) return res.end();
-  const akis = fs.createReadStream(dosya, { start: bas, end: son });
-  akis.on('error', () => res.destroy());
-  akis.pipe(res);
+  const stream = fs.createReadStream(file, { start, end });
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
 }
 
-/** '/api/proje/:id/urunler' biçiminde desenlerle basit yönlendirici. */
-export class Yonlendirici {
-  #yollar = [];
-  ekle(yontem, desen, isleyici, secenek = {}) {
-    const adlar = [];
-    const ifade = new RegExp('^' + desen.replace(/:(\w+)/g, (_, ad) => { adlar.push(ad); return '([^/]+)'; }) + '$');
-    this.#yollar.push({ yontem, ifade, adlar, isleyici, secenek });
+/** A simple router for patterns like '/api/project/:id/products'. */
+export class Router {
+  #routes = [];
+  add(method, pattern, handler, options = {}) {
+    const names = [];
+    const regex = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, name) => { names.push(name); return '([^/]+)'; }) + '$');
+    this.#routes.push({ method, regex, names, handler, options });
   }
-  bul(yontem, yol) {
-    let yolVar = false;
-    for (const y of this.#yollar) {
-      const m = y.ifade.exec(yol);
+  find(method, pathname) {
+    let pathExists = false;
+    for (const r of this.#routes) {
+      const m = r.regex.exec(pathname);
       if (!m) continue;
-      yolVar = true;
-      if (y.yontem !== yontem) continue;
-      const p = {};
-      y.adlar.forEach((ad, i) => { p[ad] = decodeURIComponent(m[i + 1]); });
-      return { isleyici: y.isleyici, secenek: y.secenek, p };
+      pathExists = true;
+      if (r.method !== method) continue;
+      const params = {};
+      r.names.forEach((name, i) => { params[name] = decodeURIComponent(m[i + 1]); });
+      return { handler: r.handler, options: r.options, params };
     }
-    return yolVar ? { yontemYok: true } : null;
+    return pathExists ? { wrongMethod: true } : null;
   }
 }

@@ -1,164 +1,171 @@
 # Kumanda
 
-Bilgisayarındaki **Claude Code**'u telefondan ya da başka bir bilgisayardan kullan; bütün projelerinin ürettiği **HTML, APK, EXE,
-ZIP, video ve belgeleri** tek yerden aç ya da indir.
+Use the **Claude Code** on your computer from your phone or another computer; open or download the **HTML, APK, EXE, ZIP,
+video and document** outputs of all your projects from one place.
 
-Bilgisayarın açık olduğu sürece, istediğin cihazdan bir proje seçersin, Claude'a yazarsın, yanıtını canlı okursun ve izin isterse
-tek dokunuşla verirsin. Claude senin bilgisayarında, senin dosyalarında, senin Claude Code ayarlarınla çalışır; Kumanda yalnızca
-kumandadır.
+As long as your computer is on, you pick a project from any device, write to Claude, read the reply live and grant a permission
+with one tap. Claude runs on your computer, in your files, with your Claude Code settings; Kumanda is only the remote control.
 
 <p align="center">
-  <img src="belgeler/telefon-projeler.png" width="190" alt="Projeler listesi">
-  <img src="belgeler/telefon-izin.png" width="190" alt="Sohbet ve izin kartı">
-  <img src="belgeler/telefon-urunler.png" width="190" alt="Bir projenin ürünleri, sohbetlere göre">
-  <img src="belgeler/telefon-tum-urunler.png" width="190" alt="Bütün ürünler: proje ve sohbet grupları, gizlenenler">
-  <img src="belgeler/telefon-dosyalar.png" width="190" alt="Telefonda proje dosyaları çekmecesi">
+  <img src="docs/phone-projects.png" width="190" alt="The project list">
+  <img src="docs/phone-permission.png" width="190" alt="A chat with a permission card">
+  <img src="docs/phone-products.png" width="190" alt="A project's products, by chat">
+  <img src="docs/phone-all-products.png" width="190" alt="All products: project and chat groups, hidden ones">
+  <img src="docs/phone-files.png" width="190" alt="The project files drawer on the phone">
 </p>
-<p align="center"><img src="belgeler/masaustu-sohbet.png" width="780" alt="Masaüstünde koyu tema"></p>
-<p align="center"><img src="belgeler/masaustu-dosyalar.png" width="780" alt="Masaüstünde proje dosyaları gezgini ve renklendirilmiş kod"></p>
+<p align="center"><img src="docs/desktop-chat.png" width="780" alt="Dark theme on the desktop"></p>
+<p align="center"><img src="docs/desktop-files.png" width="780" alt="The project file explorer and highlighted code on the desktop"></p>
 
-<sub>Görüntüler tanıtım verisiyle üretildi (`araclar/ekran-goruntuleri.mjs`); gerçek bir projeye ait değildir.</sub>
+<sub>The screenshots are made with demo data (`tools/screenshots.mjs`); they do not belong to a real project.</sub>
 
-> Bağımsız bir kişisel projedir. Anthropic ile bağlantısı yoktur, onun tarafından geliştirilmemiş ya da onaylanmamıştır.
+> An independent personal project. It is not affiliated with Anthropic and is not developed or endorsed by Anthropic.
 
-## Neler yapabilirsin?
+## What can you do?
 
-- **Bütün projelerin tek listede.** Projeler klasöründeki her klasör ve Claude Code'un daha önce çalıştığı her klasör, son etkinliğe
-  göre sıralı. Bir sohbet çalışıyorsa yanında yeşil nokta yanar. Projeye dokununca son sohbeti açılır; **＋** ile yeni proje
-  klasörü açarsın.
-- **Yeni sohbet ya da kaldığın yerden devam.** Terminalde başlattığın oturumlar da listede; telefondan açıp sürdürebilirsin.
-- **Ne kadar çalıştı, ne zaman bitti.** Her turun sonunda çalışma süresi ve bitiş saati; durum çubuğunda model, effort ve
-  abonelik kullanımı (5 saatlik ve haftalık, son bilinen değer).
-- **Canlı yanıt.** Yanıt yazıldıkça akar; Claude'un çalıştırdığı her komut ve düzenlediği her dosya ayrı satırda görünür.
-  Tablolar, kod blokları ve listeler biçimli gösterilir.
-- **İzinler telefonunda.** Claude bir komut çalıştırmak isterse kart çıkar: *İzin ver*, *Hep izin ver* ya da *Reddet*. Claude soru
-  sorarsa seçenekleri görürsün; plan modunda planı onaylarsın.
-- **Mod, model ve effort.** Her sohbette izin modunu (sor, düzenlemelere izin ver, plan…), modeli ve düşünme derinliğini seçersin;
-  sohbet sürerken de değişir. "Varsayılan" seçiliyken Claude Code ayarındaki gerçek değer yazar; durum çubuğu son isteğin
-  gerçekten hangi effort'la çalıştığını gösterir.
-- **Sıraya koy ya da şimdi gönder.** Claude çalışırken Enter istemi sıraya koyar, `Ctrl+Enter` (ya da "Şimdi gönder") süren işi
-  kesip hemen gönderir. Gönderilmemiş istemin her sohbette ayrı saklanır; sohbet değiştirince kaybolmaz.
-- **Yan sorular (`/btw`).** `/btw <sorun>` yazarsan Claude sohbetin kopyasında, işini bölmeden ve araç kullanmadan yanıtlar;
-  soru ve yanıt sohbetin içinde saklanır. Terminalde sorduğun `/btw`'lerin soruları da görünür (Claude Code yanıtlarını
-  kaydetmediği için onların yanıtı yoktur).
-- **Resim gönder.** Ekran görüntüsünü ya da fotoğrafı isteme ekle; telefonda küçültülüp gönderilir.
-- **Ürünler, onları üreten sohbete göre.** Her projenin Ürünler sekmesinde dosyalar, onları son değiştiren sohbetin başlığı altında
-  durur; sohbet ekranında başlığın yanındaki **Ürünler** sekmesi yalnızca o sohbetinkileri açar (yazarken bakabilirsin);
-  üstteki **Ürünler** düğmesi bütün projeleri aynı düzende, proje → sohbet diye gösterir. Web sayfası, video ve PDF
-  tarayıcıda açılır; APK telefona yüklenir; EXE ve ZIP iner. Cihazına uymayanlar etiketlenir; aynı ürünün eski sürümleri ve
-  kopyaları listelenmez, yardımcı dosyalar "Diğer dosyalar" altına iner. **Gizle** dediğin dosya silinmez: aynı sohbetin altındaki "Gizlediklerin" kutusuna geçer,
-  **Göster** ile geri gelir; **Gizlenenlerin hepsini göster** hepsini birden geri alır.
-- **Proje dosyaları, VS Code'daki gibi.** Klasör düğmesi (`Ctrl+Shift+E`) projeyi ağaç olarak açar; dosyalar satır numaralı ve
-  renklendirilmiş görünür, Markdown önizlemeli, resimler doğrudan. Yalnızca görüntüleme; nokta ile başlayan dosyalar (`.env`…)
-  gösterilmez.
-- **Esnek düzen.** Bilgisayarda proje listesi ve dosyalar paneli kenarından sürüklenerek genişler, daralır, kapanır (`Ctrl+B`);
-  telefonda proje listesi sağa kaydırınca soldan açılır, sola kaydırınca kapanır.
-- **Bildirim.** Sayfa kapalıyken Claude işini bitirince ya da izin beklerken telefonuna bildirim gelir (cihaz başına açılır).
-- **Koptuğunda iş durmaz.** Telefonun uykuya geçse de Claude çalışmaya devam eder; geri döndüğünde kaldığı yerden görürsün.
-- **Açık ve koyu tema, telefona uygun düzen, ana ekrana eklenebilir (PWA).**
+- **All your projects in one list.** Every folder in your projects folder and every folder Claude Code has worked in, sorted by
+  last activity. A green dot shows a running chat. Tapping a project opens its latest chat; **＋** creates a new project folder.
+- **Start a new chat or continue where you left off.** Sessions you started in the terminal are in the list too; open and continue
+  them from the phone.
+- **How long it worked, when it finished.** The working time and finish time after every turn; the model, the effort and your
+  subscription usage (5-hour and weekly, the last known value) in the status bar.
+- **Live replies.** The reply streams as it is written; every command Claude runs and every file it edits shows on its own row,
+  and runs of consecutive steps fold into one row you can open. Tables, code blocks and lists are formatted.
+- **Permissions on your phone.** When Claude wants to run a command a card shows up: *Allow*, *Always allow* or *Deny*. When Claude
+  asks a question you see the options; in plan mode you approve the plan.
+- **Mode, model and effort.** In every chat you pick the permission mode (ask, accept edits, plan…), the model and the thinking
+  depth; they change while the chat runs too. With "default" selected the real value from your Claude Code settings is shown; the
+  status bar shows which effort the last request really used.
+- **Queue it or send it now.** While Claude works Enter queues the prompt; `Ctrl+Enter` (or "Now") interrupts the running work and
+  sends right away. Your unsent prompt is kept per chat; switching chats does not lose it.
+- **Side questions (`/btw`).** Write `/btw <question>` and Claude answers in a copy of the chat, without interrupting its work and
+  without tools; the question and answer are kept in the chat. The questions of `/btw`s you asked in the terminal show up too
+  (they have no answer, because Claude Code does not save those answers).
+- **Send images.** Attach a screenshot or a photo to the prompt; on the phone it is shrunk before sending.
+- **Products, by the chat that made them.** In each project's Products tab the files sit under the title of the chat that last
+  changed them; in a chat, the **Products** tab next to the title opens only that chat's products (you can look while writing);
+  the **Products** button at the top shows all projects the same way, project → chat. Web pages, videos and PDFs open in the
+  browser; an APK installs on the phone; EXE and ZIP download. Ones that do not fit your device are labelled; old versions and
+  copies of the same product are not listed, helper files go under "Other files". A file you **Hide** is not deleted: it moves to
+  the "Hidden by you" box under the same chat and comes back with **Show**; **Show all hidden** brings them all back.
+- **Project files, like in VS Code.** The folder button (`Ctrl+Shift+E`) opens the project as a tree; files show with line numbers
+  and syntax highlighting, Markdown with a preview, images directly. View only; files starting with a dot (`.env`…) are not shown.
+- **A flexible layout.** On the computer the project list and the files panel grow, shrink and close by dragging their edge
+  (`Ctrl+B`); on the phone the project list opens from the left when you swipe right and closes when you swipe left.
+- **Notifications.** When Claude finishes or waits for permission while the page is closed, your phone gets a notification
+  (turned on per device).
+- **The work does not stop when you disconnect.** Even if your phone goes to sleep Claude keeps working; when you come back you see
+  it from where you left off.
+- **Light and dark theme, a phone-friendly layout, can be added to the home screen (PWA).**
 
-## Gerekenler
+## Requirements
 
-- Windows 10 ya da 11 (kurulum betikleri PowerShell'dir; sunucu Node.js olduğu için başka sistemlerde elle çalıştırılabilir)
-- [Node.js](https://nodejs.org) 22 ya da üstü
-- Kurulu ve giriş yapılmış [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude` komutu çalışıyor olmalı)
-- Uzaktan erişim için ücretsiz bir [Tailscale](https://tailscale.com) hesabı (yalnızca bu bilgisayardan kullanacaksan gerekmez)
+- Windows 10 or 11 (the setup scripts are PowerShell; the server is Node.js, so it can be run by hand on other systems)
+- [Node.js](https://nodejs.org) 22 or newer
+- [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and logged in (the `claude` command must work)
+- A free [Tailscale](https://tailscale.com) account for remote access (not needed if you only use it on this computer)
 
-Başka bağımlılık yoktur: `npm install` bile gerekmez.
+There are no other dependencies: not even `npm install` is needed.
 
-## Kurulum
+## Setup
 
 ```powershell
 git clone https://github.com/Soft-Coder-183/kumanda.git
 cd kumanda
-powershell -ExecutionPolicy Bypass -File .\kur.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-`kur.ps1` Kumanda'yı arka planda başlatır, her oturum açılışında kendiliğinden başlaması için kısayol kurar ve tarayıcıda
-**http://127.0.0.1:7777** adresini açar. İlk açılışta şifreni belirlersin (en az 10 karakter). Şifre yalnızca bu bilgisayardan
-belirlenebilir.
+`install.ps1` starts Kumanda in the background, adds a shortcut so it starts by itself every time you log in, and opens
+**http://127.0.0.1:7777** in the browser. On the first visit you set your password (at least 10 characters). The password can
+only be set from this computer.
 
-Projelerin varsayılan olarak Kumanda klasörünün yanındaki klasörlerde aranır. Başka bir kök klasör için
-`%LOCALAPPDATA%\Kumanda\ayar.json` dosyasındaki `kokler` listesini düzenle; tek bir klasörü de Ayarlar'dan ekleyebilirsin.
+By default your projects are looked for in the folders next to the Kumanda folder. For another root folder edit the `roots` list
+in `%LOCALAPPDATA%\Kumanda\config.json`; you can also add a single folder from Settings.
 
-### Telefondan erişim
+### Access from the phone
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\uzak-kur.ps1
+powershell -ExecutionPolicy Bypass -File .\remote-setup.ps1
 ```
 
-Betik Tailscale'i kurar (yoksa), giriş yapmanı ister ve telefonda açacağın `https://<bilgisayar>.<ağın>.ts.net` adresini yazar.
-Telefona da Tailscale uygulamasını kurup aynı hesapla giriş yap. Adres kalıcıdır; ana ekrana ekleyebilirsin.
+The script installs Tailscale (if missing), asks you to log in and prints the `https://<computer>.<your-network>.ts.net` address
+to open on the phone. Install the Tailscale app on the phone too and log in with the same account. The address is permanent; you
+can add it to the home screen.
 
-Varsayılan olarak Kumanda **yalnızca senin Tailscale ağındaki cihazlara** açılır, internete açılmaz.
-`.\uzak-kur.ps1 -Herkese` internete açar (Tailscale Funnel); o zaman tek koruma şifren ve giriş sınırıdır, önerilmez.
+By default Kumanda opens **only to the devices in your Tailscale network**, not to the internet.
+`.\remote-setup.ps1 -Public` opens it to the internet (Tailscale Funnel); then your password and the login limit are the only
+protection, which is not recommended.
 
-## Açma, kapatma, kaldırma
+## Starting, stopping, removing
 
-| Ne | Komut |
+| What | Command |
 |---|---|
-| Çalışıyor mu? | `node sunucu.mjs --durum` |
-| Durdur | `node sunucu.mjs --durdur` |
-| Yeniden başlat / güncelledikten sonra | `.\kur.ps1` |
-| Uzaktan erişimi kapat (bilgisayarda kullanım sürer) | `.\uzak-kur.ps1 -Kapat` |
-| Otomatik başlatmayı kaldır ve durdur | `.\kur.ps1 -Kaldir` |
-| Şifreyi unuttum | `node sunucu.mjs --sifre-sifirla` (bütün cihazları çıkarır; yeni şifre bu bilgisayardan) |
+| Is it running? | `node server.mjs --status` |
+| Stop | `node server.mjs --stop` |
+| Restart / after an update | `.\install.ps1` |
+| Turn remote access off (use on the computer goes on) | `.\remote-setup.ps1 -Off` |
+| Remove the automatic start and stop | `.\install.ps1 -Uninstall` |
+| I forgot the password | `node server.mjs --reset-password` (logs out every device; the new password is set from this computer) |
 
-Kumanda bir pencereye bağlı değildir: terminali kapatsan da çalışır. Bilgisayar uykuya geçince ya da kapanınca erişilemez.
-Tamamen silmek için `.\kur.ps1 -Kaldir` çalıştırıp klasörü ve `%LOCALAPPDATA%\Kumanda` klasörünü sil.
+Kumanda is not tied to a window: it keeps running if you close the terminal. When the computer sleeps or shuts down it cannot be
+reached. To remove it completely run `.\install.ps1 -Uninstall`, then delete the folder and the `%LOCALAPPDATA%\Kumanda` folder.
 
-Güncelleme: `git pull`, sonra `.\kur.ps1`.
+Updating: `git pull`, then `.\install.ps1`. (Updating from 1.x: the settings, password, devices and side questions are moved to
+the new file names by themselves on the first start.)
 
-## Güvenlik
+## Security
 
-Kumanda'ya giren kişi, Claude aracılığıyla bilgisayarında komut çalıştırabilir. Bu yüzden:
+Whoever gets into Kumanda can run commands on your computer through Claude. So:
 
-- Sunucu yalnızca `127.0.0.1`'i (bu bilgisayarın kendisini) dinler; ağdan doğrudan ulaşılamaz. Dışarıdan tek yol Tailscale'in
-  şifreli tünelidir.
-- İlk şifre yalnızca bu bilgisayardan konabilir; tünelden gelen biri sistemi sahiplenemez.
-- Şifre scrypt ile özetlenir; açık hâli hiçbir yerde saklanmaz. 15 dakikada 5 hatalı denemeden sonra giriş kilitlenir.
-- Cihaz oturumları `HttpOnly` çerezle tutulur ve Ayarlar'dan tek tek kapatılabilir.
-- Ürün dosyaları ayrı bir kökenden (ayrı port) sunulur: bir ürün HTML'inin içindeki betik Kumanda'nın API'sini kullanamaz.
-  Dosya gezgini de dosyaları Kumanda'nın içinde yalnızca düz metin olarak gösterir; hiçbir dosya orada sayfa ya da betik olarak
-  çalışmaz.
-- Ayarlar, şifre özeti ve oturumlar proje klasöründe değil `%LOCALAPPDATA%\Kumanda\` altında durur; depoya girmez.
-- Claude'un izin kuralları senin Claude Code ayarlarındır; Kumanda bunları gevşetmez. "Hep izin ver" yalnızca o projenin
-  `.claude/settings.local.json` dosyasına kural ekler.
+- The server only listens on `127.0.0.1` (this computer itself); it cannot be reached directly from the network. The only way in
+  from outside is Tailscale's encrypted tunnel.
+- The first password can only be set from this computer; someone coming through the tunnel cannot claim the system.
+- The password is hashed with scrypt; it is not stored in clear anywhere. After 5 wrong attempts in 15 minutes the login is locked.
+- Device sessions are kept with an `HttpOnly` cookie and can be closed one by one from Settings.
+- Product files are served from a separate origin (a separate port): a script inside a product's HTML cannot use Kumanda's API.
+  The file explorer, too, only shows files as plain text inside Kumanda; no file runs there as a page or a script.
+- The settings, the password hash and the sessions are not in the project folder but under `%LOCALAPPDATA%\Kumanda\`; they never go
+  into the repository.
+- Claude's permission rules are your Claude Code settings; Kumanda does not loosen them. "Always allow" only adds a rule to that
+  project's `.claude/settings.local.json`.
 
-Bir güvenlik sorunu bulursan lütfen herkese açık issue yerine GitHub'ın
-[özel güvenlik bildirimi](https://github.com/Soft-Coder-183/kumanda/security/advisories/new) ile bildir.
+If you find a security problem, please report it through GitHub's
+[private security advisory](https://github.com/Soft-Coder-183/kumanda/security/advisories/new) instead of a public issue.
 
-## Nasıl çalışır?
+## How does it work?
 
 ```
-telefon ──https──> Tailscale ──> 127.0.0.1:7777 Kumanda ──stdin/stdout──> claude -p (proje klasöründe)
-                             └─> 127.0.0.1:7778 ürün sunucusu ──> proje klasörlerindeki dosyalar
+phone ──https──> Tailscale ──> 127.0.0.1:7777 Kumanda ──stdin/stdout──> claude -p (in the project folder)
+                           └─> 127.0.0.1:7778 product server ──> the files in the project folders
 ```
 
-Her sohbet için Claude Code'un kendi akış kipi (`claude -p --input-format stream-json --output-format stream-json`) başlatılır;
-izin istekleri bu kanal üzerinden telefona taşınır. Geçmiş sohbetler Claude Code'un kendi kayıtlarından okunur, yani terminaldeki
-oturumlarla aynı şeydir. Bir ürünün hangi sohbete ait olduğu, dosyanın değiştirilme zamanı ile sohbetin etkinlik zamanlarından
-çıkarılır.
+For every chat Claude Code's own streaming mode (`claude -p --input-format stream-json --output-format stream-json`) is started;
+permission requests are carried to the phone over this channel. Past chats are read from Claude Code's own logs, so they are the
+same thing as the sessions in the terminal. Which chat a product belongs to is worked out from the file's modification time and
+the chat's activity times.
 
-Ayrıntılı mimari, güvenlik modeli ve Claude Code protokolü notları: [`PROJE_DEVIR.md`](PROJE_DEVIR.md).
+A `/btw` side question runs a separate, short-lived copy of the chat (`--resume <chat> --fork-session --no-session-persistence
+--tools ""`): the chat itself, its transcript and its context do not change. That copy reads the whole conversation again, so on a
+long chat a side question costs about as much as one more prompt.
 
-## Geliştirme
+Detailed architecture, the security model and notes on the Claude Code protocol: [`PROJE_DEVIR.md`](PROJE_DEVIR.md).
+
+## Development
 
 ```powershell
-node sunucu.mjs   # ön planda çalıştır
-npm test          # sahte Claude ile uçtan uca testler (kota harcamaz)
-.\derle.ps1       # denetim + test + yeniden başlat
+node server.mjs   # run in the foreground
+npm test          # end-to-end tests with a fake Claude (spends no quota)
+.\derle.ps1       # check + test + restart
 ```
 
-Kod Türkçe adlandırılmıştır, dış bağımlılık yoktur. README görüntüleri: `npm i --no-save playwright-core`, sonra
-`node araclar/ekran-goruntuleri.mjs` (kurulu Chrome kullanır). Sürüm notları [`notlar/`](notlar) klasöründe.
+No external dependencies. README screenshots: `npm i --no-save playwright-core`, then `node tools/screenshots.mjs` (uses the
+installed Chrome). Release notes are in the [`notes/`](notes) folder.
 
-## Claude Code Remote Control ile farkı
+## How is it different from Claude Code Remote Control?
 
-Claude Code'un yerleşik `claude --remote-control` özelliği de bir oturumu claude.ai/code'dan ya da Claude uygulamasından
-sürdürmeni sağlar. Kumanda'nın farkı: oturumu önceden bilgisayarda başlatman gerekmez (projeyi telefondan seçip yeni sohbet
-açarsın), projelerin ürünlerini listeler ve açar, Anthropic'in sunucuları üzerinden değil kendi Tailscale ağın üzerinden çalışır.
+Claude Code's built-in `claude --remote-control` also lets you continue a session from claude.ai/code or the Claude app. What
+Kumanda adds: you do not need to start the session on the computer first (you pick the project on the phone and open a new chat),
+it lists and opens your projects' products, and it works over your own Tailscale network instead of Anthropic's servers.
 
-## Lisans
+## License
 
 [MIT](LICENSE)

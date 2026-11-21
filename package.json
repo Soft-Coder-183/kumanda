@@ -3,7 +3,7 @@
   "version": "1.3.0",
   "private": true,
   "type": "module",
-  "description": "Bilgisayarındaki Claude Code'u ve projelerinin ürünlerini telefondan ya da başka bir bilgisayardan kullan",
+  "description": "Use the Claude Code on your computer and the products of your projects from your phone or another computer",
   "license": "MIT",
   "author": "Eren Akyurt",
   "repository": {
@@ -12,8 +12,8 @@
   },
   "homepage": "https://github.com/Soft-Coder-183/kumanda#readme",
   "scripts": {
-    "start": "node sunucu.mjs",
-    "test": "node --test test/kumanda.test.mjs test/arayuz.test.mjs"
+    "start": "node server.mjs",
+    "test": "node --test test/server.test.mjs test/ui.test.mjs"
   },
   "engines": {
     "node": ">=22"

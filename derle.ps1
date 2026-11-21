@@ -1,13 +1,13 @@
-﻿# Kumanda'da derleme adımı yoktur (saf Node + derlemesiz arayüz). Bu betik "çalışır hâle getirir":
-# sözdizimini denetler, testleri çalıştırır, sunucuyu yeni kodla yeniden başlatır.
+﻿# Kumanda has no build step (plain Node + a UI without a build). This script "makes it run":
+# checks the syntax, runs the tests, restarts the server with the new code.
 #   .\derle.ps1
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-foreach ($d in @('sunucu.mjs') + (Get-ChildItem src, web, test, araclar -Include *.mjs, *.js -Recurse | ForEach-Object FullName)) {
-  node --check $d
-  if ($LASTEXITCODE) { throw "Sözdizimi hatası: $d" }
+foreach ($f in @('server.mjs') + (Get-ChildItem src, web, test, tools -Include *.mjs, *.js -Recurse | ForEach-Object FullName)) {
+  node --check $f
+  if ($LASTEXITCODE) { throw "Syntax error: $f" }
 }
 npm test
-if ($LASTEXITCODE) { throw 'Testler geçmedi; sunucu yeniden başlatılmadı.' }
-& (Join-Path $PSScriptRoot 'kur.ps1')
+if ($LASTEXITCODE) { throw 'The tests failed; the server was not restarted.' }
+& (Join-Path $PSScriptRoot 'install.ps1')
