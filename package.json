@@ -1,6 +1,6 @@
 {
   "name": "kumanda",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "Use the Claude Code on your computer and the products of your projects from your phone or another computer",
