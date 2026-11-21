@@ -248,6 +248,9 @@ password and the login limit are the only protection.
   `lastRequest` too. The label of the "default" option comes from `GET /api/project/:pid/effort` (`effortSettings`:
   `~/.claude/settings.json` → the project's `.claude/settings.json` → `settings.local.json`; `effortLevel`, `model`,
   `modelSettings.<full model>.effortLevel`). An effort given by an environment variable is not seen.
+- **Selects give the focus back (2.0.0):** after a `change` on the mode/model/effort select the UI calls `select.blur()` and (not on
+  touch screens) focuses the prompt, so Enter sends the prompt instead of reopening the menu. Checked in real Chrome by
+  `tools/screenshots.mjs` (pick effort → type → Enter → reply with that effort).
 - **Send now (Ctrl+Enter, 1.3.0):** `now: true` on the `send` route while the run works first sends `interrupt`, then the prompt. The
   interrupted turn's `result` may arrive after the new prompt's `user` event. A plain Enter writes the prompt to stdin; the CLI
   queues it.
@@ -299,6 +302,8 @@ Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every
   being added to the page; the test passed, real Chrome stayed at "Loading…" (2026-11-17). New views go into `tools/screenshots.mjs` too.
 - The fake DOM drops attributes containing `-` (`aria-label`); tests find elements by `title` or `placeholder`.
 - Kumanda's CSP does not allow `unsafe-eval`: Playwright's `waitForFunction` does not run on the page; use `waitForSelector` with text.
+- On a touch context (Playwright `hasTouch`) the UI deliberately does not move the focus to the prompt (no keyboard popping up);
+  focus checks belong to the desktop context.
 - UI files are served with `no-cache` (ETag); a UI change needs no server restart, server code does.
 
 ## Open work

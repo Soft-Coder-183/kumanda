@@ -225,6 +225,15 @@ try {
   await m.waitForSelector('table');
   await wait(500);
   const file1 = path.join(OUT, 'desktop-chat.png'); await m.screenshot({ path: file1 }); saved.push(file1);
+  // After picking an effort the focus goes back to the prompt, so Enter sends it instead of reopening the menu
+  // (on touch screens the focus is not moved, so the keyboard does not pop up).
+  await m.selectOption('.effort-select', 'high');
+  if (!(await m.evaluate(() => document.activeElement?.tagName === 'TEXTAREA'))) errors.push('after picking an effort the prompt did not get the focus back');
+  await m.keyboard.type('effort check');
+  await m.keyboard.press('Enter');
+  await m.waitForSelector('.msg.claude >> text=effort: high');
+  await m.selectOption('.effort-select', '');
+
   // Desktop: the project list is narrowed from its edge, the explorer opens, the file shows highlighted.
   await m.goto(`${C}/#/p/${weather}/f/${encodeURIComponent('src/screens/home.js')}`);
   await m.waitForSelector('.code-view .s-keyword');

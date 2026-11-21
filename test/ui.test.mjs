@@ -338,9 +338,17 @@ test('UI: every view and event type draws without errors', async () => {
   assert.ok(effortSelect, 'there is an effort select');
   streams.at(-1).onmessage({ data: JSON.stringify({ type: 'status', state: 'ready', mode: 'acceptEdits', effort: '', generation: 'n1' }), lastEventId: '' });
   effortSelect.value = 'high';
+  focused = effortSelect;
   for (const f of effortSelect.listeners.change) await f(event(effortSelect));
   await wait(20);
   assert.deepEqual(requests.findLast(i => i.url === `/api/session/${SID}/mode`)?.body, { effort: 'high' }, 'an effort change in a live session goes to the server');
+  // After picking from the menu the focus goes back to the prompt: Enter sends the prompt, it does not reopen the menu.
+  assert.equal(effortSelect.blurred, true, 'the effort select lets go of the focus');
+  assert.equal(focused, input, 'the prompt gets the focus back');
+  const modelSelect = all.findLast(e => e.tag === 'select' && e.title?.startsWith('Model'));
+  focused = modelSelect;
+  for (const f of modelSelect.listeners.change) await f(event(modelSelect));
+  assert.equal(focused, input, 'the model select returns the focus too');
   assert.equal(location.hash, `#/p/${PID}/s/${SID}`);
   assert.equal(streams.length, before + 1);
   // if the stream closes for good (the server restarted) the history is reloaded

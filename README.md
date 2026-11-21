@@ -34,7 +34,7 @@ with one tap. Claude runs on your computer, in your files, with your Claude Code
   asks a question you see the options; in plan mode you approve the plan.
 - **Mode, model and effort.** In every chat you pick the permission mode (ask, accept edits, plan…), the model and the thinking
   depth; they change while the chat runs too. With "default" selected the real value from your Claude Code settings is shown; the
-  status bar shows which effort the last request really used.
+  status bar shows which effort the last request really used. After picking from a menu, Enter sends your prompt.
 - **Queue it or send it now.** While Claude works Enter queues the prompt; `Ctrl+Enter` (or "Now") interrupts the running work and
   sends right away. Your unsent prompt is kept per chat; switching chats does not lose it.
 - **Side questions (`/btw`).** Write `/btw <question>` and Claude answers in a copy of the chat, without interrupting its work and

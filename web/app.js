@@ -1294,17 +1294,22 @@ function chatView(pid, sid) {
     if (images.length) { e.preventDefault(); addImages(images); }
   });
   fileInput.addEventListener('change', () => { addImages([...fileInput.files]); fileInput.value = ''; });
+  // After picking from a menu the focus goes back to the prompt: Enter then sends the prompt instead of reopening the menu.
+  const backToPrompt = select => { select.blur(); if (!TOUCH) input.focus(); };
   modeSelect.addEventListener('change', async () => {
     mode = modeSelect.value; store.set('kumanda.mode', mode);
+    backToPrompt(modeSelect);
     if (sid && live && live.state !== 'closed') { try { await api(`/api/session/${sid}/mode`, { mode }); } catch (x) { toast(x.message); modeSelect.value = live.mode; } }
   });
   modelSelect.addEventListener('change', async () => {
     model = modelSelect.value; store.set('kumanda.model', model);
     labelEffort();
+    backToPrompt(modelSelect);
     if (sid && live && live.state !== 'closed') { try { await api(`/api/session/${sid}/mode`, { model }); } catch (x) { toast(x.message); } }
   });
   effortSelect.addEventListener('change', async () => {
     effort = effortSelect.value; store.set('kumanda.effort', effort);
+    backToPrompt(effortSelect);
     if (sid && live && live.state !== 'closed') {
       try { await api(`/api/session/${sid}/mode`, { effort }); toast(live.state === 'running' ? 'Effort applies from the next step' : 'Effort changed'); }
       catch (x) { toast(x.message); effortSelect.value = live.effort ?? ''; }
