@@ -1,14 +1,15 @@
 # Kumanda: Handover Document
 
 A local server + web UI for using the Claude Code on this computer and the project products from any device. This document is
-written so an agent taking over the project can start without seeing earlier conversations. (The file name is fixed by the
-owner's global rules; the content is in English like the rest of the repository.)
+written so an agent taking over the project can start without seeing earlier conversations. (The owner's global rules call
+this file `PROJE_DEVIR.md` and the build files `DERLE.md`/`derle.ps1`; in this project they are `HANDOVER.md`, `BUILD.md` and
+`build.ps1`, the owner's decision on 2026-11-21.)
 
 - **Owner:** Eren (speaks Turkish; replies to them in Turkish). For their own use; the repository is public (MIT).
 - **Repository:** https://github.com/Soft-Coder-183/kumanda (public since 2026-11-16). Releases are GitHub tags + releases; nothing
   is built, so no files are attached (the source zip is enough).
-- **Status:** 2.0.0 (2026-11-21): the whole repository (code identifiers, UI, routes, data file names, scripts, docs) moved from
-  Turkish to English. The server and the Claude protocol were tried with real Claude Code 2.1.322/2.1.329. The UI is tried in
+- **Status:** 2.1.0 (2026-11-21): `/btw` reuses the chat's prompt cache, "Chats"/"Back to chat" navigation, the VS Code button,
+  the handover/build files renamed. 2.0.0 (same day): the whole repository moved from Turkish to English. The server and the Claude protocol were tried with real Claude Code 2.1.322/2.1.329. The UI is tried in
   headless Chrome (`tools/screenshots.mjs`). Tailscale forwarding is set up (own network only), the https address was tried from
   this computer. **Not tried by the agent:** real phone use, notifications on the phone. See Open work.
 - **Work in progress:** none.
@@ -43,7 +44,8 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | `src/config.mjs` | `config.json` in the data folder, `atomicWrite`, **the one-time migration of a 1.x data folder** (`migrateLegacyData`) |
 | `src/sessions.mjs` | The `Run` class (process + event log), `toItems()` (line → UI item), `readHistory()`, `lastRequest()`, `effortSettings()` |
 | `src/projects.mjs` | `listProjects`, `listSessions`, `listProducts` + secondary marking, `linkProductsToSessions`, `safePath`, `listFolder`, `readFileForView` |
-| `src/btw.mjs` | `/btw` side questions: a forked, unsaved, tool-less Claude call; storage; terminal questions from history.jsonl |
+| `src/btw.mjs` | `/btw` side questions: a forked, unsaved Claude call with tools blocked by a hook; storage; terminal questions from history.jsonl |
+| `src/btw-no-tools.mjs` | The PreToolUse hook of `/btw` (exit code 2 = every tool call denied) |
 | `src/auth.mjs` | Password, `control`/`product` device sessions, login limit, tickets |
 | `src/push.mjs` | VAPID key, subscriptions, payload-less Web Push |
 | `src/http.mjs` | `Router`, `json`, `sendFile` (Range, ETag), cookies, `requestInfo` (`local`, `client`, `https`) |
@@ -52,7 +54,7 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | `tools/make-icons.mjs` | Makes `web/icon-*.png` (run again if the icon changes) |
 | `tools/screenshots.mjs` | README screenshots (`docs/*.png`): a separate instance (7797/7798) in a temp folder with demo projects/chats and the fake Claude, headless Chrome; exit code 1 on page errors. Run again when the UI changes |
 | `README.md`, `LICENSE` | The public face of the repository; update the README when a feature or command changes |
-| `install.ps1`, `remote-setup.ps1`, `derle.ps1` | Setup/automatic start, Tailscale, check+test+restart |
+| `install.ps1`, `remote-setup.ps1`, `build.ps1` | Setup/automatic start, Tailscale, check+test+restart |
 
 ## Features
 
@@ -66,12 +68,15 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | Settings | Device sessions, password change, adding a folder outside the roots, hidden projects |
 | Files | The project folder as a tree (like the VS Code explorer) and a read-only, highlighted file viewer |
 | Side questions | `/btw <question>`: a side question without interrupting the chat; the question and answer are kept, terminal ones' questions show too |
+| VS Code | `POST /api/project/:pid/vscode { session? }`: opens the project in VS Code on the computer and the chat in the Claude Code extension panel (see "VS Code button") |
+| Navigation | Chat top bar: "‹ Chats" → the project's chat list; file viewer: "‹ Back to chat" → the last chat opened in that project (`lastChat`, in memory per tab) |
 | Layout | On the desktop the sidebar and the files panel resize/close by dragging; on the phone swipeable drawers |
 
 ### 2.0.0: the English rename
 - Every identifier, route, event type, field, CSS class, file and folder name moved to English (the Turkish → English mapping is
   in the git history of the 2.0.0 commit). Kept on purpose: the cookie names `kumanda_o` / `kumanda_u` / `kumanda_son` (so devices
-  stay logged in) and the global-rule file names `DERLE.md`, `derle.ps1`, `PROJE_DEVIR.md`.
+  stay logged in). In 2.1.0 the global-rule files were renamed too: `DERLE.md` → `BUILD.md`, `derle.ps1` → `build.ps1`,
+  `PROJE_DEVIR.md` → `HANDOVER.md`.
 - **Data folder migration** (`src/config.mjs` → `migrateLegacyData`, runs on every start and on every CLI flag, does nothing when
   done): `ayar.json` → `config.json` (keys mapped, `sifre {tuz, ozet}` → `password {salt, hash}`), `cihazlar.json` → `devices.json`
   (`tur: kumanda|urun` → `kind: control|product`), `bildirim.json` → `push.json`, `gunluk.txt` → `server.log`, `yerel-anahtar` →
@@ -180,26 +185,43 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
   (`getLastLimit`, fields `fiveHour`, `sevenDay`, `*ResetsAt` in s); the history route returns `limit`; the UI hides a window whose
   reset time has passed.
 
-### /btw side questions (`src/btw.mjs`, 1.3.0)
+### /btw side questions (`src/btw.mjs`, 1.3.0; cache reuse 2.1.0)
 - **Claude Code does not keep them** (checked on 2.1.329): a terminal `/btw <question>` never enters the transcript (only an
   argument-less `/btw` lands with its "Usage" output; `toItems()` hides it); the question is only written to
   `~/.claude/history.jsonl` (`display`, `timestamp` ms, `sessionId`), **the answer is written nowhere**.
 - Asked from Kumanda: a prompt starting with `/btw ` makes the UI send `POST /api/project/:pid/session/:sid/btw { id, question,
   model, effort }` (it does not go to the chat). The server runs `claude -p --output-format json --resume <sid> --fork-session
-  --no-session-persistence --tools "" --strict-mcp-config --append-system-prompt <instruction>` and writes the question to stdin.
+  --no-session-persistence --permission-mode manual --settings <PreToolUse hook> --max-turns 3 [--model] [--effort]` (2.1.0) and
+  writes `[Side question (/btw): …] + question` to stdin.
   Tried with haiku: the copy knows the chat's context; neither the chat transcript nor a new transcript nor history.jsonl changes.
   At most 3 at once, 3 min timeout.
-- **Context and cache (owner asked, 2026-11-21):** the chat's context window is not affected (separate process, nothing saved) and
-  its prompt cache is not invalidated. But the fork does **not reuse** the chat's cache: its system prompt and tool list differ
-  (`--tools ""`, the appended instruction, no MCP), so the cached prefix does not match and every `/btw` cache-writes the whole
-  conversation (seen with haiku: ~5.1k cache_creation tokens, no cache_read). Claude Code's own `/btw` reuses the main cache. See
-  Open work.
+- **Context and cache (2.1.0, measured with haiku 2026-11-21):** the chat's context window is not affected (separate process,
+  nothing saved). The prompt cache key is tools → system → messages, so the fork must start with **the same flags as the chat**
+  (`--permission-mode` default/manual vs acceptEdits does not matter) and must not touch the tool list or the system prompt. What
+  breaks reuse (each cache-wrote the whole conversation, 0 read): `--tools ""`, `--disallowedTools`, `permissions.deny` rules,
+  `--append-system-prompt`, `--strict-mcp-config`, plan mode. What keeps it: a PreToolUse hook given with `--settings` (exit 2
+  blocks the call, also in acceptEdits). Numbers on a ~35k-token chat: matching flags + hook = 34k read / 1.1k write, $0.0056;
+  `--disallowedTools` = 0 read / 28.6k write, $0.0107. The instruction goes into the user message (stdin), not the system prompt.
+  1.3.0–2.0.0 used `--tools ""` and so paid for the whole conversation every time.
 - Storage: `%LOCALAPPDATA%\Kumanda\btw\<session>.jsonl` (`{ id, at, question, answer | error, source, model }`); pending ones in memory.
 - View: the history route interleaves side questions (saved + pending + history.jsonl ones, `source: 'terminal'`) by time as
   `type: 'btw'` items (`interleave`). With an open run, the ones after `Run.historyLimitAt` stay out of the history; they land in the
   run's event log (`publishBtw`) twice, "pending" and answered. The client makes the id; the UI draws one card per id and an
   answered card never goes back to "pending" (whatever order the history, stream and POST reply arrive in).
 - history.jsonl only grows at the end: only the new part is read (`terminal.read`); if the file shrinks, from the start.
+
+### VS Code button (`POST /api/project/:pid/vscode`, 2.1.0)
+- The owner wanted "open this project in VS Code, start the terminal and open our Claude chat there". **A VS Code terminal cannot
+  be started from outside:** the `code` CLI has no such option, and the Claude Code extension (2.1.330) only has the URI
+  `vscode://anthropic.claude-code/open?session=<id>&prompt=`, which opens the chat in the extension's **panel** (not a terminal);
+  `claude-vscode.terminal.open` is a command and cannot be called by URI. So: `Code.exe <project>` and, 2.5 s later,
+  `Code.exe --open-url <that URI>` (with no session only the folder).
+- `vscodeCommand()`: env `KUMANDA_VSCODE` (JSON array, tests use `test/fake-vscode.mjs`) → `config.vscode` → `code.cmd` in PATH →
+  `..\Code.exe` → `%LOCALAPPDATA%\Programs\Microsoft VS Code`, `%ProgramFiles%`. `launch()` spawns detached and drops
+  `ELECTRON_RUN_AS_NODE`, `CLAUDECODE`, `CLAUDE_CODE_*` (otherwise Code.exe runs as Node or the extension thinks it is nested).
+- Two writers on one transcript are avoided: if the chat's run is working → 409; if it is idle it is closed first (`closedRun`).
+  400 bad session id, 404 no transcript, 501 VS Code not found. Same auth/origin checks as every `/api` (test "VS Code: …").
+- **Not tried for real by the agent** (only the fake): the real window, the URI handler, the panel picking up the session.
 
 ## Security model
 
@@ -219,8 +241,10 @@ Threat: whoever reaches this UI can run commands on the computer through Claude.
 7. **File content is only data on the control origin:** the explorer routes return the content inside JSON (`nosniff`); the UI draws
    it as a text node or through `md()`, an image as an `<img>` with a `data:` URL (an SVG in `<img>` does not run scripts). No
    project file is opened as a document on the control origin; "Open" goes to the product origin.
-8. **The side question (`/btw`) is tool-less:** started with `--tools ""` and `--strict-mcp-config`; the question goes through stdin,
-   not as an argument (no shell, a `spawn` array). Auth/origin checks like every `/api`; test `server.test.mjs` → "/btw side question".
+8. **The side question (`/btw`) cannot use tools:** a PreToolUse hook (`src/btw-no-tools.mjs`, matcher `*`, exit 2) passed with
+   `--settings` denies every call, `--permission-mode manual` and `--max-turns 3` on top (2.1.0; tools are not removed from the list
+   so the prompt cache matches, see "/btw side questions"). The question goes through stdin, not as an argument (no shell, a `spawn`
+   array). Auth/origin checks like every `/api`; test `server.test.mjs` → "/btw side question".
 
 Known limits: cookies do not separate ports (on the same host the control cookie also goes to the product port, but it is
 `HttpOnly` and the product server does not use it); all products share one origin and so `localStorage`; in `-Public` mode the
@@ -262,7 +286,7 @@ password and the login limit are the only protection.
 
 ## Build and trial
 
-- **Build pipeline:** none; `derle.ps1` = check + test + `install.ps1`. Commands are in `DERLE.md`.
+- **Build pipeline:** none; `build.ps1` = check + test + `install.ps1`. Commands are in `BUILD.md`.
 - **Background start:** on Windows `--background` starts the server through WMI (`Win32_Process.Create`, hidden window) with the
   `--log` flag: the process does not join the job object of the terminal/VS Code/Claude Code that started it and does not die with
   them; its parent is `WmiPrvSE.exe`. WMI cannot redirect output, so `--log` mode writes `console.*` to the log file. A process
@@ -282,7 +306,7 @@ Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every
 
 - Windows 11, Node 24, Claude Code at `~\.local\bin\claude.exe`. The default shell is Windows PowerShell 5.1.
 - **The agent's own session may run under this Kumanda server** (started from the phone). Stopping/restarting the server
-  (`derle.ps1`, `install.ps1`, `--stop`) kills the agent's session mid-work. Restart last, delayed and detached (e.g.
+  (`build.ps1`, `install.ps1`, `--stop`) kills the agent's session mid-work. Restart last, delayed and detached (e.g.
   `Start-Process powershell -WindowStyle Hidden -ArgumentList '-Command','Start-Sleep 90; & .\install.ps1'`).
 - Writing a regex to a file through a shell script (`node -e`, heredoc) lost backslashes (2026-11-12); edits with regexes or escapes
   are made with the edit tool.
@@ -308,9 +332,9 @@ Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every
 
 ## Open work
 
-- **`/btw` does not reuse the chat's prompt cache** (see "/btw side questions"). Possible improvement: start the fork with the same
-  system prompt/tools/MCP/model as the chat (no `--tools ""`, no appended instruction; keep it read-only some other way, e.g. a
-  `deny` permission mode for every tool) and check with haiku that `cache_read_input_tokens` > 0. Weigh the security point 8 first.
+- **VS Code button not tried with the real VS Code** (see "VS Code button"); it opens the extension panel, not a terminal. If the
+  owner wants the terminal: a `.vscode/tasks.json` with `runOn: folderOpen` running `claude --resume <id>` would do it, but needs
+  the folder to be trusted and writes into the project.
 - **The UI is partly tried in a real browser:** `tools/screenshots.mjs` in headless Chrome (phone 390 px light, desktop 1280 px dark)
   opens projects, products, the permission card, chat, explorer, file viewer, drawers, ☰/Ctrl+B, swipes, the chat's Products tab,
   the `/btw` card, the draft coming back, the effort in the status bar and the select focus (with `KUMANDA_EXTRA_SHOTS=<folder>`

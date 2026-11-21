@@ -1,14 +1,14 @@
 # Kumanda: build and run
 
 There is no build step (a dependency-free Node.js server + a UI without a build). "Building" here means check, test, restart.
-(The file name is fixed by the owner's global rules.)
+
 
 ## One command
 
 In PowerShell, in the project folder:
 
 ```powershell
-.\derle.ps1
+.\build.ps1
 ```
 
 In order: syntax check → `npm test` (with a fake Claude; spends no quota) → `install.ps1` (the startup shortcut + restarting the

@@ -1,6 +1,6 @@
 ﻿# Kumanda has no build step (plain Node + a UI without a build). This script "makes it run":
 # checks the syntax, runs the tests, restarts the server with the new code.
-#   .\derle.ps1
+#   .\build.ps1
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 

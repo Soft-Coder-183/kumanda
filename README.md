@@ -37,8 +37,8 @@ with one tap. Claude runs on your computer, in your files, with your Claude Code
   status bar shows which effort the last request really used. After picking from a menu, Enter sends your prompt.
 - **Queue it or send it now.** While Claude works Enter queues the prompt; `Ctrl+Enter` (or "Now") interrupts the running work and
   sends right away. Your unsent prompt is kept per chat; switching chats does not lose it.
-- **Side questions (`/btw`).** Write `/btw <question>` and Claude answers in a copy of the chat, without interrupting its work and
-  without tools; the question and answer are kept in the chat. The questions of `/btw`s you asked in the terminal show up too
+- **Side questions (`/btw`).** Write `/btw <question>` and Claude answers in a copy of the chat that knows the whole conversation so
+  far, without interrupting its work and without using tools; the question and answer are kept in the chat. The questions of `/btw`s you asked in the terminal show up too
   (they have no answer, because Claude Code does not save those answers).
 - **Send images.** Attach a screenshot or a photo to the prompt; on the phone it is shrunk before sending.
 - **Products, by the chat that made them.** In each project's Products tab the files sit under the title of the chat that last
@@ -47,6 +47,10 @@ with one tap. Claude runs on your computer, in your files, with your Claude Code
   browser; an APK installs on the phone; EXE and ZIP download. Ones that do not fit your device are labelled; old versions and
   copies of the same product are not listed, helper files go under "Other files". A file you **Hide** is not deleted: it moves to
   the "Hidden by you" box under the same chat and comes back with **Show**; **Show all hidden** brings them all back.
+- **Move around easily.** In a chat, **‹ Chats** (top left) goes to the project's other chats; from a file, **‹ Back to chat**
+  takes you back to the chat you were writing in.
+- **Continue on the computer in VS Code.** The VS Code button in a chat opens the project in VS Code on the computer, with the same
+  chat in the Claude Code panel (the chat must not be working at that moment; Kumanda hands it over).
 - **Project files, like in VS Code.** The folder button (`Ctrl+Shift+E`) opens the project as a tree; files show with line numbers
   and syntax highlighting, Markdown with a preview, images directly. View only; files starting with a dot (`.env`…) are not shown.
 - **A flexible layout.** On the computer the project list and the files panel grow, shrink and close by dragging their edge
@@ -143,18 +147,18 @@ permission requests are carried to the phone over this channel. Past chats are r
 same thing as the sessions in the terminal. Which chat a product belongs to is worked out from the file's modification time and
 the chat's activity times.
 
-A `/btw` side question runs a separate, short-lived copy of the chat (`--resume <chat> --fork-session --no-session-persistence
---tools ""`): the chat itself, its transcript and its context do not change. That copy reads the whole conversation again, so on a
-long chat a side question costs about as much as one more prompt.
+A `/btw` side question runs a separate, short-lived copy of the chat (`--resume <chat> --fork-session --no-session-persistence`)
+with the same settings as the chat, so it reads the chat's prompt cache instead of paying for the whole conversation again; a hook
+blocks every tool call in it. The chat itself, its transcript and its context do not change.
 
-Detailed architecture, the security model and notes on the Claude Code protocol: [`PROJE_DEVIR.md`](PROJE_DEVIR.md).
+Detailed architecture, the security model and notes on the Claude Code protocol: [`HANDOVER.md`](HANDOVER.md).
 
 ## Development
 
 ```powershell
 node server.mjs   # run in the foreground
 npm test          # end-to-end tests with a fake Claude (spends no quota)
-.\derle.ps1       # check + test + restart
+.\build.ps1       # check + test + restart
 ```
 
 No external dependencies. README screenshots: `npm i --no-save playwright-core`, then `node tools/screenshots.mjs` (uses the
