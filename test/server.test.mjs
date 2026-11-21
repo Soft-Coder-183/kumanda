@@ -19,7 +19,8 @@ let C, P, server, cookie = '', alpha, session, generation;
 const freePort = () => new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const writeFile = (file, content) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); };
 // KUMANDA_DIRECT: --background starts directly instead of through WMI (a process started by WMI does not inherit these variables).
-const env = () => ({ ...process.env, KUMANDA_DIRECT: '1', KUMANDA_DATA: data, KUMANDA_CLAUDE_DIR: claudeDir, KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-claude.mjs')]) });
+const env = () => ({ ...process.env, KUMANDA_DIRECT: '1', KUMANDA_DATA: data, KUMANDA_CLAUDE_DIR: claudeDir, KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-claude.mjs')]),
+  KUMANDA_VSCODE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-vscode.mjs')]) });
 
 async function request(url, { body, headers = {}, withCookie = true, base = C, method } = {}) {
   const r = await fetch(base + url, {
@@ -449,7 +450,9 @@ test('/btw side question: a tool-less, unsaved copy of the chat answers; termina
   const watch = stream('', o => o.type === 'btw' && o.id === id && typeof o.answer === 'string');
   const r = await request(`/api/project/${alpha}/session/${session}/btw`, { body: { id, question: 'what colour?', model: 'haiku' } });
   assert.equal(r.status, 200);
-  assert.equal(r.j.answer, 'Side reply: **what colour?**', 'ran with the fork + not-saved + tool-less flags');
+  assert.equal(r.j.answer, 'Side reply: **what colour?**', 'ran forked + not saved, with the chat\'s tools and the tool-blocking hook');
+  const hook = spawnSync(process.execPath, [path.join(ROOT, 'src', 'btw-no-tools.mjs')], { encoding: 'utf8' });
+  assert.equal(hook.status, 2, 'the /btw PreToolUse hook denies every tool call (exit code 2)');
   const events = await watch;
   assert.ok(events.some(o => o.type === 'btw' && o.id === id && o.pending), 'in an open chat a "pending" card streams first');
   assert.ok(!events.some(o => o.type === 'user' && o.text?.includes('what colour?')), 'no prompt goes to the chat itself');
@@ -520,6 +523,30 @@ test('products are linked to the chat that changed them (subagents too, as the t
   assert.equal((await find('?hidden')).hidden, true);
   await request(`/api/project/${alpha}/hide-products`, { body: { path: 'site/index.html', hidden: false } });
   assert.ok(await find(''), 'back in the list when shown again');
+});
+
+test('VS Code: opens the project and the chat there; an idle Kumanda process hands the chat over, a working one does not', async () => {
+  const calls = path.join(data, 'vscode-calls.jsonl');
+  const read = async n => {
+    const lines = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').trim().split(/\r?\n/) : []);
+    for (let i = 0; i < 40 && lines().length < n; i++) await new Promise(c => setTimeout(c, 150));
+    return lines().map(l => JSON.parse(l));
+  };
+  assert.equal((await request(`/api/project/${alpha}/vscode`, { body: {} })).status, 200, 'only the project');
+  assert.deepEqual((await read(1))[0], [path.join(projectsDir, 'Alpha')]);
+  await send('long reply three');
+  await stream(`${generation}:0`, o => o.type === 'delta');
+  assert.equal((await request(`/api/project/${alpha}/vscode`, { body: { session } })).status, 409, 'not while Claude works in Kumanda');
+  await request(`/api/session/${session}/interrupt`, { body: {} });
+  await stream('', o => o.type === 'status' && o.state === 'ready');
+  const r = await request(`/api/project/${alpha}/vscode`, { body: { session } });
+  assert.deepEqual([r.status, r.j.closedRun], [200, true], 'the idle process is closed so two processes do not write one transcript');
+  const all = await read(3);
+  assert.deepEqual(all.slice(1), [[path.join(projectsDir, 'Alpha')], ['--open-url', `vscode://anthropic.claude-code/open?session=${session}`]]);
+  for (const body of [{ session: 'x' }, { session: 5 }]) assert.equal((await request(`/api/project/${alpha}/vscode`, { body })).status, 400);
+  assert.equal((await request(`/api/project/${alpha}/vscode`, { body: { session: '00000000-0000-4000-8000-000000000000' } })).status, 404);
+  assert.equal((await request(`/api/project/${alpha}/vscode`, { body: {}, withCookie: false })).status, 401);
+  assert.equal((await request(`/api/project/${alpha}/vscode`, { body: {}, headers: { Origin: P } })).status, 403, 'not from the product origin');
 });
 
 test('logout: the control and product cookies become invalid together', async () => {

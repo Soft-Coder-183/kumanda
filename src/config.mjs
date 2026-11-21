@@ -21,6 +21,7 @@ const defaults = () => ({
   hiddenProducts: {},            // project id → [relative path]
   publicOrigins: {},             // control host → product origin (custom tunnel mapping; not needed for Tailscale)
   claude: null,                  // path to claude.exe or [command, ...args]; empty means "claude" from PATH
+  vscode: null,                  // path to Code.exe; empty means found on PATH or in the usual install folders
   idleCloseMinutes: 20,          // an idle Claude process is closed after this many minutes
   pushContact: 'mailto:kumanda@example.com',
   password: null,                // { salt, hash } (scrypt)

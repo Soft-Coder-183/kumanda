@@ -220,6 +220,12 @@ test('UI: every view and event type draws without errors', async () => {
   for (const f of tab.listeners.click) f(event(tab));
   assert.equal(panel.hidden, false, 'the tab opens the panel');
   assert.ok(texts(panel).includes('Alpha Site'));
+  // The project's other chats: the back arrow says "Chats" (shown on the desktop too) and goes to the chat list.
+  assert.ok(all.slice(from).some(e => e.tag === 'a' && e.className.includes('back') && !e.className.includes('home') && e.href === `#/p/${PID}` && e.title === 'Chats'));
+  // VS Code: opens this project and chat on the computer.
+  const vscodeButton = all.slice(from).find(e => e.className.includes('vscode-button'));
+  for (const f of vscodeButton.listeners.click) await f(event(vscodeButton));
+  assert.deepEqual(requests.findLast(i => i.url === `/api/project/${PID}/vscode`)?.body, { session: SID });
   // Effort: the "default" option writes the real value, the status bar the last request's effort.
   assert.equal(all.slice(from).find(e => e.tag === 'option' && e.value === '' && texts(e)[0]?.startsWith('Effort'))?.textContent, 'Effort: medium (default)');
   assert.equal(all.slice(from).find(e => e.tag === 'option' && e.value === '' && texts(e)[0] === 'Model')?.textContent, 'Model: Opus (default)');
@@ -361,6 +367,8 @@ test('UI: every view and event type draws without errors', async () => {
   from = all.length;
   await go(`#/p/${PID}/f/${encodeURIComponent('src/a.js')}`);
   await wait(30);
+  assert.ok(all.slice(from).some(e => e.className.includes('back') && e.href === `#/p/${PID}/s/${SID}` && e.title === 'Back to chat'),
+    'from a file the back arrow returns to the chat it was opened from');
   const explorerButton = all.slice(from).find(e => e.className.includes('explorer-button'));
   assert.ok(explorerButton, 'a Files button on project pages');
   for (const f of explorerButton.listeners.click) f(event(explorerButton));

@@ -106,7 +106,8 @@ chat('Notebook', 'Working offline', [
 write(path.join(data, 'config.json'), JSON.stringify({ controlPort: CP, productPort: PP, roots: [projects] }));
 const server = spawn(process.execPath, [path.join(ROOT, 'server.mjs')], {
   stdio: ['ignore', 'pipe', 'inherit'],
-  env: { ...process.env, KUMANDA_DATA: data, KUMANDA_CLAUDE_DIR: claude, KUMANDA_DIRECT: '1', KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-claude.mjs')]) },
+  env: { ...process.env, KUMANDA_DATA: data, KUMANDA_CLAUDE_DIR: claude, KUMANDA_DIRECT: '1', KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-claude.mjs')]),
+    KUMANDA_VSCODE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-vscode.mjs')]) },
 });
 await new Promise((resolve, reject) => { server.stdout.on('data', d => String(d).includes('is running') && resolve()); server.on('exit', () => reject(new Error('the server did not start'))); });
 const C = `http://127.0.0.1:${CP}`;
@@ -246,6 +247,14 @@ try {
   if (Math.abs(width - 250) > 6) errors.push(`dragging did not make the sidebar 250 px (${width})`);
   await wait(300);
   const file2 = path.join(OUT, 'desktop-files.png'); await m.screenshot({ path: file2 }); saved.push(file2);
+  // From a file the labelled back arrow returns to the chat; in the chat it says "Chats" and goes to the project's chat list.
+  await m.click('#main .back >> text=Back to chat');
+  await m.waitForSelector('#main .back >> text=Chats');
+  if (!/\/s\/[0-9a-f-]{36}$/.test(m.url())) errors.push(`"Back to chat" did not return to the chat: ${m.url()}`);
+  await m.click('#main .back');
+  await m.waitForSelector('a.tab.selected >> text=Chats');
+  await m.goto(`${C}/#/p/${weather}/f/${encodeURIComponent('src/screens/home.js')}`);
+  await m.waitForSelector('.code-view .s-keyword');
   await m.mouse.move(250, 300); await m.mouse.down(); await m.mouse.move(40, 300, { steps: 5 }); await m.mouse.up();
   if (!(await m.$('#app.side-closed'))) errors.push('dragging below the threshold did not close the sidebar');
   await m.click('.side-button');

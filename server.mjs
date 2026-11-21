@@ -330,6 +330,43 @@ api.add('POST', '/api/project/:pid/session/:sid/btw', async ({ req, res, params 
   json(res, 200, o);
 });
 
+// Open the project in VS Code on this computer; with `session`, the chat opens in the Claude Code extension's panel there
+// (its URI handler: vscode://anthropic.claude-code/open?session=<id>). VS Code cannot be told from outside to run a command
+// in its terminal, so the panel is the way to continue the same session in VS Code.
+function vscodeCommand() {
+  if (process.env.KUMANDA_VSCODE) { const c = JSON.parse(process.env.KUMANDA_VSCODE); return [c[0], c.slice(1)]; }
+  const candidates = [
+    config.vscode,
+    ...(process.env.PATH || '').split(path.delimiter).filter(Boolean).flatMap(d => (fs.existsSync(path.join(d, 'code.cmd')) ? [path.resolve(d, '..', 'Code.exe')] : [])),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
+    process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Microsoft VS Code', 'Code.exe'),
+  ].filter(Boolean);
+  const exe = candidates.find(c => fs.existsSync(c));
+  return exe ? [exe, []] : null;
+}
+function launch([command, prefix], args) {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (/^(ELECTRON_RUN_AS_NODE|CLAUDECODE|CLAUDE_CODE_)/.test(k)) delete env[k];
+  spawn(command, [...prefix, ...args], { detached: true, stdio: 'ignore', env }).on('error', e => console.error('VS Code:', e.message)).unref();
+}
+api.add('POST', '/api/project/:pid/vscode', async ({ req, res, params }) => {
+  const project = await getProject(params.pid);
+  const { session } = await readJson(req, 4096);
+  if (session != null && (typeof session !== 'string' || !/^[0-9a-f-]{36}$/i.test(session))) throw new HttpError(400, 'Invalid session');
+  if (session && !await sessionFile(project, session)) throw new HttpError(404, 'This chat has no transcript yet; wait for the first reply');
+  const command = vscodeCommand();
+  if (!command) throw new HttpError(501, 'VS Code was not found on this computer (set "vscode" in config.json to Code.exe)');
+  // The same session in two processes would write to one transcript: hand it over only when Kumanda's process is idle.
+  const r = session ? findRun(session) : null;
+  if (r && !r.closed && r.state !== 'ready') throw new HttpError(409, 'Claude is still working on this chat in Kumanda; wait or stop it first');
+  const handed = Boolean(r && !r.closed);
+  if (handed) r.close();
+  launch(command, [project.path]);
+  // Give the window a moment to open on the folder, so the extension looks for the session in the right project.
+  if (session) setTimeout(() => launch(command, ['--open-url', `vscode://anthropic.claude-code/open?session=${session}`]), 2500).unref();
+  json(res, 200, { ok: true, closedRun: handed });
+});
+
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 api.add('POST', '/api/project/:pid/send', async ({ req, res, params }) => {
   const project = await getProject(params.pid);

@@ -586,10 +586,12 @@ function drawProjects() {
 
 const projectName = pid => projects.find(p => p.id === pid)?.name || '';
 
-/** With `pid` there is an explorer (Files) button on the right. */
-function topBar({ title, sub, back = '#/', right = [], pid }) {
+/** With `pid` there is an explorer (Files) button on the right. `backLabel` names where the back arrow goes; on the desktop
+ *  it is written next to the arrow (there the arrow is hidden only when it would go to the home page, the sidebar covers that). */
+function topBar({ title, sub, back = '#/', backLabel = 'Back', right = [], pid }) {
   return h('div', { class: 'top' },
-    h('a', { class: 'btn icon flat back', href: back, 'aria-label': 'Back' }, '‹'),
+    h('a', { class: `btn flat back${back === '#/' ? ' home icon' : ''}`, href: back, title: backLabel, 'aria-label': backLabel },
+      '‹', back !== '#/' && h('span', { class: 'back-label' }, backLabel)),
     h('button', { class: 'btn icon flat side-button', type: 'button', title: 'Project list (Ctrl+B)', 'aria-label': 'Toggle the project list', onclick: toggleSide }, '☰'),
     h('div', { class: 'title' }, typeof title === 'string' ? h('h1', {}, title) : title, sub && (typeof sub === 'string' ? h('div', { class: 'sub' }, sub) : sub)),
     right,
@@ -794,13 +796,18 @@ function codeView(text, lang) {
     lines.map(s => h('span', { class: 'ln' }, s.map(([cls, piece]) => (cls ? h('span', { class: `s-${cls}` }, piece) : piece)))));
 }
 
+// The last chat opened in each project: the file viewer's back arrow returns to it.
+const lastChat = new Map();
+
 function fileView(pid, path) {
   const name = path.split('/').pop();
   const body = h('div', { class: 'file-body' }, h('div', { class: 'empty' }, 'Loading…'));
   const infoEl = h('div', { class: 'file-bar' });
   const open = `/open?p=${pid}&path=${encodeURIComponent(path)}`;
   main.replaceChildren(
-    topBar({ title: name, sub: [projectName(pid), ...path.split('/').slice(0, -1)].filter(Boolean).join(' › '), back: `#/p/${pid}`, pid,
+    // Back goes to the chat you came from (the explorer is opened from a chat), else to the project's chats.
+    topBar({ title: name, sub: [projectName(pid), ...path.split('/').slice(0, -1)].filter(Boolean).join(' › '), pid,
+      ...(lastChat.get(pid) ? { back: `#/p/${pid}/s/${lastChat.get(pid)}`, backLabel: 'Back to chat' } : { back: `#/p/${pid}`, backLabel: 'Chats' }),
       right: [h('a', { class: 'btn small', href: open, target: '_blank', rel: 'noopener', title: 'Open in a separate browser tab (as a product)' }, 'Open'),
         h('a', { class: 'btn small', href: `${open}&download=1`, target: '_blank', rel: 'noopener', title: 'Download to this device' }, 'Download')] }),
     infoEl, h('div', { class: 'scroll' }, body));
@@ -980,7 +987,16 @@ function chatView(pid, sid) {
   if (sid && openBoxes.has(panelKey)) openProductPanel(true);
 
   const titleRow = h('div', { class: 'title-tabs' }, titleEl, productButton);
-  main.replaceChildren(topBar({ title: titleRow, sub: projectName(pid), back: `#/p/${pid}`, pid }), productPanel, scrollEl, statusEl, form);
+  // Opens the project (and this chat in Claude Code's VS Code panel) on the computer; Kumanda's idle process is closed first.
+  const vscodeButton = h('button', { class: 'btn small vscode-button', type: 'button', title: 'Open this project and chat in VS Code on the computer',
+    onclick: async () => {
+      try {
+        const r = await api(`/api/project/${pid}/vscode`, { session: sid || null });
+        toast(sid ? `Opening VS Code on the computer${r.closedRun ? '; the chat continues there' : ''}` : 'Opening the project in VS Code on the computer');
+      } catch (x) { if (x.status !== 401) toast(x.message); }
+    } }, 'VS Code');
+  if (sid) lastChat.set(pid, sid);
+  main.replaceChildren(topBar({ title: titleRow, sub: projectName(pid), back: `#/p/${pid}`, backLabel: 'Chats', pid, right: [vscodeButton] }), productPanel, scrollEl, statusEl, form);
 
   // ── drawing ──
   const atBottom = () => scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 120;
@@ -1263,7 +1279,7 @@ function chatView(pid, sid) {
         ...(now && working ? { now: true } : {}) });
       draft.write('');
       input.value = ''; attachments.length = 0; drawAttachments(); resize();
-      if (!sid) { sid = r.session; history.replaceState(null, '', `#/p/${pid}/s/${sid}`); titleEl.textContent = text.slice(0, 60) || 'Chat'; productButton.hidden = false; }
+      if (!sid) { sid = r.session; lastChat.set(pid, sid); history.replaceState(null, '', `#/p/${pid}/s/${sid}`); titleEl.textContent = text.slice(0, 60) || 'Chat'; productButton.hidden = false; }
       if (r.generation !== live?.generation) { closeStream(); marker = ''; }
       openStream();
     } catch (x) { if (x.status !== 401) toast(x.message); }
