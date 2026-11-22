@@ -59,7 +59,23 @@ with one tap. Claude runs on your computer, in your files, with your Claude Code
   (turned on per device).
 - **The work does not stop when you disconnect.** Even if your phone goes to sleep Claude keeps working; when you come back you see
   it from where you left off.
-- **Light and dark theme, a phone-friendly layout, can be added to the home screen (PWA).**
+- **See what is running.** The "Now" list at the top of the sidebar shows every chat that is working, waiting for you, or
+  finished while you were away, across all projects.
+- **Find anything.** `Ctrl+K` (or **Search** in the sidebar) finds projects, chats in every project and actions; in a project's
+  Chats tab you can filter chats and search inside the messages. Chats can be pinned, renamed (the name shows in the terminal
+  too) and archived.
+- **Review the changes.** A project's **Changes** tab shows the git branch, the changed files with their diffs and the recent
+  commits (read only).
+- **Send later.** **Later** in the composer sends the prompt at a time you pick, or when the usage limit resets; a "You've hit
+  your limit" reply gets a **Continue when the limit resets** button.
+- **Saved prompts.** **Saved** inserts prompts you use often ("Continue.", "Run the tests…"); edit the list in Settings.
+- **Drafts follow you.** An unsent prompt is saved on the computer too: start it on the phone, finish it on the computer. Pasted
+  screenshots stay in the draft on that device.
+- **Small comforts.** Copy buttons on replies and code blocks, **Edit again** on your prompts, ↑/↓ for earlier prompts, `Esc` to
+  stop, a **Latest** button when new messages arrive while you read above, Claude's task list above the composer, the context
+  size in the status bar, export a chat as Markdown, "Ask in chat" from a file, a connection banner, `?` for all shortcuts.
+- **Share to Claude.** On Android, share text or a link from any app to the installed Kumanda and pick the project.
+- **Light and dark theme (or follow the system), text size, a phone-friendly layout, can be added to the home screen (PWA).**
 
 ## Requirements
 

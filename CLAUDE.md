@@ -3,7 +3,7 @@
 A local server + web UI that lets Eren use the Claude Code on their computer and the products of all their projects (HTML, APK,
 EXE, ZIP, video, documents) from the phone or another computer. Dependency-free Node.js (22+), no build step. The server only
 listens on `127.0.0.1`; remote access comes through Tailscale forwarding (set up, own network only). Public repository (MIT):
-https://github.com/Soft-Coder-183/kumanda. Status: 2.1.0 (2026-11-21: /btw reuses the prompt cache, VS Code button); real phone use not tried by
+https://github.com/Soft-Coder-183/kumanda. Status: 2.2.0 (2026-11-22: Now list, search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
 the agent. Details: `HANDOVER.md` (read the relevant section when needed). The owner speaks Turkish: reply to them in Turkish.
 
 ## Commands
@@ -22,6 +22,8 @@ the agent. Details: `HANDOVER.md` (read the relevant section when needed). The o
 - `src/projects.mjs`: project discovery, session list, product scan, safe path resolution
 - `src/btw.mjs`: `/btw` side questions (forked, unsaved `claude -p` with the chat's flags so it reuses the prompt cache; tools
   blocked by the PreToolUse hook `src/btw-no-tools.mjs`; storage; terminal questions in history.jsonl)
+- `src/store.mjs` (drafts, saved prompts, chat flags), `src/schedule.mjs` (scheduled prompts), `src/git.mjs` (read-only git),
+  `src/search.mjs` (chat search)
 - `src/auth.mjs`: password (scrypt), device sessions, login limit, product origin tickets
 - `src/push.mjs`: Web Push (payload-less); `src/http.mjs`: HTTP helpers; `src/config.mjs`: config file + 1.x data migration
 - `web/`: UI (`app.js`: views, layout/explorer, file viewer and syntax highlighter; `style.css`, `sw.js`); not built, served as is
@@ -34,6 +36,8 @@ the agent. Details: `HANDOVER.md` (read the relevant section when needed). The o
 - **Exception to the global rules G4/G5 (owner's decision, 2026-11-21):** here the build doc is `BUILD.md`, the build script
   `build.ps1` and the handover document `HANDOVER.md` (instead of `DERLE.md`, `derle.ps1`, `PROJE_DEVIR.md`).
 - No external dependencies (neither server nor UI); what is needed is written with Node's built-ins.
+- No emoji in the UI (owner's wish): buttons have text labels.
+- A new view or panel comes with its way back (back link, Esc, route change closes menus); do not wait to be asked.
 - In the UI, HTML is only produced with `h()` or as `md()` output; `md()` escapes first, then formats. Raw text never goes to `innerHTML`.
 - Only nodes go into the DOM (`replaceChildren`, `append`); no `null`/arrays (`h()` filters them itself).
 - `.ps1` files stay UTF-8 **with BOM** (Windows PowerShell 5.1 mangles non-ASCII text in files without a BOM).
@@ -64,6 +68,7 @@ the agent. Details: `HANDOVER.md` (read the relevant section when needed). The o
 ## In the handover document
 - Architecture, Security model: before touching auth, origin, tunnel or product serving
 - 2.0.0: the English rename: data folder migration, kept names, updating a running 1.x server
+- Features table + "2.2.0 notes": the routes and stores added in 2.2.0
 - VS Code button: before touching `/api/project/:pid/vscode` (why a panel and not a terminal)
 - Claude Code protocol: before touching `src/sessions.mjs` or when Claude Code is updated
 - /btw side questions: before touching `src/btw.mjs` or how the chat history is merged (also: context and cache behaviour)

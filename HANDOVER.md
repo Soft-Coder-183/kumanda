@@ -8,7 +8,8 @@ this file `PROJE_DEVIR.md` and the build files `DERLE.md`/`derle.ps1`; in this p
 - **Owner:** Eren (speaks Turkish; replies to them in Turkish). For their own use; the repository is public (MIT).
 - **Repository:** https://github.com/Soft-Coder-183/kumanda (public since 2026-11-16). Releases are GitHub tags + releases; nothing
   is built, so no files are attached (the source zip is enough).
-- **Status:** 2.1.0 (2026-11-21): `/btw` reuses the chat's prompt cache, "Chats"/"Back to chat" navigation, the VS Code button,
+- **Status:** 2.2.0 (2026-11-22): the "Now" list, search everything (Ctrl+K), chat pin/rename/archive and message search,
+  the Changes (git) tab, scheduled prompts, saved prompts, drafts shared between devices, task panel, copy buttons, themes. 2.1.0 (2026-11-21): `/btw` reuses the chat's prompt cache, "Chats"/"Back to chat" navigation, the VS Code button,
   the handover/build files renamed. 2.0.0 (same day): the whole repository moved from Turkish to English. The server and the Claude protocol were tried with real Claude Code 2.1.322/2.1.329. The UI is tried in
   headless Chrome (`tools/screenshots.mjs`). Tailscale forwarding is set up (own network only), the https address was tried from
   this computer. **Not tried by the agent:** real phone use, notifications on the phone. See Open work.
@@ -45,6 +46,10 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | `src/sessions.mjs` | The `Run` class (process + event log), `toItems()` (line → UI item), `readHistory()`, `lastRequest()`, `effortSettings()` |
 | `src/projects.mjs` | `listProjects`, `listSessions`, `listProducts` + secondary marking, `linkProductsToSessions`, `safePath`, `listFolder`, `readFileForView` |
 | `src/btw.mjs` | `/btw` side questions: a forked, unsaved Claude call with tools blocked by a hook; storage; terminal questions from history.jsonl |
+| `src/store.mjs` | Small shared JSON stores in the data folder: `drafts.json`, `snippets.json`, `chats.json` (pinned/archived) |
+| `src/schedule.mjs` | Scheduled prompts (`scheduled.json`), the timer that sends them, the limit reset time |
+| `src/git.mjs` | Read-only git: status, log, file/commit diff (`execFile`, argument array) |
+| `src/search.mjs` | Chat search: titles in every project, message text in one project |
 | `src/btw-no-tools.mjs` | The PreToolUse hook of `/btw` (exit code 2 = every tool call denied) |
 | `src/auth.mjs` | Password, `control`/`product` device sessions, login limit, tickets |
 | `src/push.mjs` | VAPID key, subscriptions, payload-less Web Push |
@@ -71,6 +76,15 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | VS Code | `POST /api/project/:pid/vscode { session? }`: opens the project in VS Code on the computer and the chat in the Claude Code extension panel (see "VS Code button") |
 | Navigation | Chat top bar: "‹ Chats" → the project's chat list; file viewer: "‹ Back to chat" → the last chat opened in that project (`lastChat`, in memory per tab) |
 | Layout | On the desktop the sidebar and the files panel resize/close by dragging; on the phone swipeable drawers |
+| Now (2.2.0) | Sidebar list of open runs across projects (`GET /api/runs` + titles): working, waiting, finished and not seen (`localStorage['kumanda.seen']`) |
+| Search (2.2.0) | Ctrl+K palette (projects, chats of the current project, `GET /api/search?q=` titles everywhere, actions); Chats tab filter + `?pid=` message search |
+| Chat flags (2.2.0) | `POST /api/project/:pid/session/:sid/meta { pinned?, archived?, title? }`; the title is a `custom-title` line appended to the transcript (what Claude Code's /rename writes), refused while the run works |
+| Changes (2.2.0) | Project tab `#/p/<pid>/changes`, `#/p/<pid>/diff/<path>`, `#/p/<pid>/commit/<hash>`; `GET /api/project/:pid/git` and `/git/diff?path=|commit=` |
+| Later (2.2.0) | `GET/POST /api/schedule`, `/api/schedule/cancel`, `/api/schedule/run`; at a time or `afterLimit` (reset time from the last rate_limit_event, else parsed from "resets 4:20am" in the reply on the client) |
+| Saved prompts, drafts (2.2.0) | `/api/snippets` (list, shared); `/api/drafts?key=<pid>.<sid or new>` (text, newest `at` wins); images stay in `localStorage['kumanda.draftImages.<key>']` |
+| Chat comforts (2.2.0) | Copy/Edit again under messages, code copy, ↑/↓ prompt recall, Esc stops, "Latest" jump button, task panel (TaskCreate/TaskUpdate, TodoWrite), context tokens and working time in the status bar, export Markdown, error "Retry" |
+| Share (2.2.0) | Manifest `share_target` GET to `/` → `?text=` is moved to `sessionStorage` and `#/share` asks for the project |
+| Appearance (2.2.0) | `html[data-theme]` (light/dark, else the system) and `html[data-size]`, per device in Settings |
 
 ### 2.0.0: the English rename
 - Every identifier, route, event type, field, CSS class, file and folder name moved to English (the Turkish → English mapping is
@@ -223,6 +237,15 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
   400 bad session id, 404 no transcript, 501 VS Code not found. Same auth/origin checks as every `/api` (test "VS Code: …").
 - **Not tried for real by the agent** (only the fake): the real window, the URI handler, the panel picking up the session.
 
+### 2.2.0 notes
+- Every new route is behind the same auth/origin checks. Git runs only fixed read commands with an argument array; the path must
+  be relative without `..`, options or drive letters, a commit only hex (`validGitPath`, `validHash`; tested).
+- The rename is the only place Kumanda writes into a transcript (one appended `custom-title` line).
+- Scheduled prompts older than 12 h when due (computer off/asleep) are marked "missed" and not sent; failures send a push.
+- `KUMANDA_TICK_MS` makes the schedule timer fast in tests.
+- Menus/dialogs: `layer()` / `openMenu()` / `askText()`; one open at a time, Esc, a click outside or a route change closes it.
+  On the phone a menu is a bottom sheet.
+
 ## Security model
 
 Threat: whoever reaches this UI can run commands on the computer through Claude. Layers:
@@ -328,7 +351,14 @@ Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every
 - Kumanda's CSP does not allow `unsafe-eval`: Playwright's `waitForFunction` does not run on the page; use `waitForSelector` with text.
 - On a touch context (Playwright `hasTouch`) the UI deliberately does not move the focus to the prompt (no keyboard popping up);
   focus checks belong to the desktop context.
-- UI files are served with `no-cache` (ETag); a UI change needs no server restart, server code does.
+- UI files are served with `no-cache` (ETag); a UI change needs no server restart, server code does. **The other way round
+  bites:** a new UI talking to an old server gets 404 "Not found" on new routes (seen 2026-11-22 when the restart had not run).
+- The delayed restart started through WMI silently did nothing once (2026-11-21); now its output goes to
+  `%TEMP%\kumanda-restart.log` and the next session checks `node server.mjs --status`.
+- Bash heredocs with quotes or backslashes failed or mangled text several times; multi-line edits go through the edit tool or a
+  script written with the file tool.
+- A wrapper element around `.scroll` must be `flex: 1; min-height: 0` (`.scroll-wrap`), or the chat stops scrolling and does not
+  open at the end (2026-11-22, when its CSS was missing). `tools/screenshots.mjs` checks the mouse wheel now.
 
 ## Open work
 
@@ -346,6 +376,8 @@ Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every
   be checked by eye.
 - **Notifications not tried end to end:** subscriptions need https or localhost; the VAPID signature and the service worker should be
   tried on a real device. `config.pushContact` is a placeholder; Apple's push service may want a valid `mailto:`.
+- 2.2.0 features tried in headless Chrome (palette, menus, wheel, shortcuts, Changes) and the fake DOM; real git/search on large
+  projects, Android share target and scheduled sends at a real limit reset were not tried by the agent.
 - If the same session is open in the terminal and in Kumanda at once, two processes write to the same transcript; no warning.
 - The history defaults to the last 12 MB / 1500 items; "Load older messages" (`?older`) goes up to 128 MB / 50000 items.
 - No reverse proxy for products that need a server (e.g. apps running on `localhost:3000`).
