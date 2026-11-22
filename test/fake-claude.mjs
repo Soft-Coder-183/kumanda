@@ -21,7 +21,8 @@ const waitingReplies = new Map();
 let interrupted = false, counter = 0;
 
 function assistant(content) {
-  const m = { type: 'assistant', message: { role: 'assistant', content }, parent_tool_use_id: null, session_id: session };
+  const usage = { input_tokens: 10, cache_creation_input_tokens: 200, cache_read_input_tokens: 1000, output_tokens: 50 }; // context: 1260
+  const m = { type: 'assistant', message: { role: 'assistant', content, usage }, parent_tool_use_id: null, session_id: session };
   write(m); record(m);
 }
 function toolResult(id, text, error = false) {

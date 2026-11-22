@@ -20,7 +20,7 @@ const freePort = () => new Promise(resolve => { const s = net.createServer().lis
 const writeFile = (file, content) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); };
 // KUMANDA_DIRECT: --background starts directly instead of through WMI (a process started by WMI does not inherit these variables).
 const env = () => ({ ...process.env, KUMANDA_DIRECT: '1', KUMANDA_DATA: data, KUMANDA_CLAUDE_DIR: claudeDir, KUMANDA_CLAUDE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-claude.mjs')]),
-  KUMANDA_VSCODE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-vscode.mjs')]) });
+  KUMANDA_VSCODE: JSON.stringify([process.execPath, path.join(ROOT, 'test', 'fake-vscode.mjs')]), KUMANDA_TICK_MS: '250' });
 
 async function request(url, { body, headers = {}, withCookie = true, base = C, method } = {}) {
   const r = await fetch(base + url, {
@@ -547,6 +547,125 @@ test('VS Code: opens the project and the chat there; an idle Kumanda process han
   assert.equal((await request(`/api/project/${alpha}/vscode`, { body: { session: '00000000-0000-4000-8000-000000000000' } })).status, 404);
   assert.equal((await request(`/api/project/${alpha}/vscode`, { body: {}, withCookie: false })).status, 401);
   assert.equal((await request(`/api/project/${alpha}/vscode`, { body: {}, headers: { Origin: P } })).status, 403, 'not from the product origin');
+});
+
+test('VS Code: one file of the project opens in the project window; files outside the project do not', async () => {
+  const calls = path.join(data, 'vscode-calls.jsonl');
+  const before = fs.readFileSync(calls, 'utf8').trim().split(/\r?\n/).length;
+  assert.equal((await request(`/api/project/${alpha}/vscode`, { body: { file: 'index.html' } })).status, 200);
+  for (let i = 0; i < 40 && fs.readFileSync(calls, 'utf8').trim().split(/\r?\n/).length <= before; i++) await new Promise(c => setTimeout(c, 150));
+  const last = JSON.parse(fs.readFileSync(calls, 'utf8').trim().split(/\r?\n/).at(-1));
+  assert.deepEqual(last, [path.join(projectsDir, 'Alpha'), fs.realpathSync(path.join(projectsDir, 'Alpha', 'index.html'))]);
+  for (const file of ['../outside.txt', '.hidden/secret.txt', 'missing.txt', 5]) {
+    assert.equal((await request(`/api/project/${alpha}/vscode`, { body: { file } })).status, 404, String(file));
+  }
+});
+
+test('context size: the tokens after the last reply come with the history and the live status', async () => {
+  const history = await request(`/api/project/${alpha}/session/${session}`);
+  assert.equal(history.j.lastRequest.context, 1260, 'from the usage of the last assistant message in the transcript');
+  await send('hello context');
+  const events = await stream('', isResult);
+  assert.ok(events.some(o => o.type === 'status' && o.context === 1260), 'the live status carries it too');
+  const runs = await request('/api/runs');
+  const run = runs.j.runs.find(r => r.session === session);
+  assert.ok(run.title && run.finishedAt > 0 && run.lastText.includes('hello context'), 'the runs list has the title, finish time and last reply');
+});
+
+test('chat list: pin, archive and rename (the rename is the same line Claude Code\'s /rename writes)', async () => {
+  const meta = body => request(`/api/project/${alpha}/session/${session}/meta`, { body });
+  assert.deepEqual((await meta({ pinned: true })).j, { ok: true, pinned: true });
+  assert.equal((await meta({ title: 'Renamed chat', archived: true })).status, 200);
+  let s = (await request(`/api/project/${alpha}`)).j.sessions.find(x => x.id === session);
+  assert.deepEqual([s.title, s.pinned, s.archived], ['Renamed chat', true, true]);
+  const file = fs.readdirSync(path.join(claudeDir, 'projects'), { recursive: true }).find(f => f.endsWith(`${session}.jsonl`));
+  assert.ok(fs.readFileSync(path.join(claudeDir, 'projects', file), 'utf8').includes('"type":"custom-title","customTitle":"Renamed chat"'));
+  await meta({ pinned: false, archived: false });
+  s = (await request(`/api/project/${alpha}`)).j.sessions.find(x => x.id === session);
+  assert.deepEqual([s.pinned, s.archived], [undefined, undefined]);
+  for (const body of [{ title: '' }, { title: 'x'.repeat(121) }]) assert.equal((await meta(body)).status, 400);
+  assert.equal((await request(`/api/project/${alpha}/session/00000000-0000-4000-8000-000000000000/meta`, { body: { pinned: true } })).status, 404);
+});
+
+test('search: titles in every project, messages inside one project', async () => {
+  const everywhere = await request(`/api/search?q=${encodeURIComponent('renamed')}`);
+  assert.ok(everywhere.j.results.some(r => r.session === session && r.byTitle && r.matches.length === 0), 'title search without content');
+  const inside = await request(`/api/search?q=${encodeURIComponent('try permission')}&pid=${alpha}`);
+  const hit = inside.j.results.find(r => r.session === session);
+  assert.ok(hit && hit.matches.some(m => m.role === 'user' && m.text.includes('try permission')), 'a prompt matches');
+  const reply = await request(`/api/search?q=${encodeURIComponent('The command ran')}&pid=${alpha}`);
+  assert.ok(reply.j.results[0]?.matches.some(m => m.role === 'assistant'), 'a reply matches');
+  assert.deepEqual((await request('/api/search?q=a')).j.results, [], 'too short');
+  assert.equal((await request('/api/search?q=ab&pid=000000000000')).status, 404);
+});
+
+test('drafts are shared between devices; an older write does not overwrite a newer one', async () => {
+  const key = `${alpha}.${session}`;
+  assert.deepEqual((await request(`/api/drafts?key=${key}`)).j, { text: '', at: 0 });
+  assert.equal((await request('/api/drafts', { body: { key, text: 'from the phone', at: 2000 } })).j.text, 'from the phone');
+  assert.equal((await request('/api/drafts', { body: { key, text: 'stale', at: 1000 } })).j.text, 'from the phone', 'older write ignored');
+  assert.deepEqual((await request(`/api/drafts?key=${key}`)).j, { text: 'from the phone', at: 2000 });
+  await request('/api/drafts', { body: { key, text: '', at: 3000 } });
+  assert.equal((await request(`/api/drafts?key=${key}`)).j.text, '', 'an empty draft is deleted');
+  assert.equal((await request('/api/drafts?key=../x')).status, 400);
+  assert.equal((await request('/api/drafts', { body: { key: 'bad', text: 'x', at: 1 } })).status, 400);
+});
+
+test('saved prompts: defaults, then the edited list for every device', async () => {
+  const first = await request('/api/snippets');
+  assert.ok(first.j.snippets.includes('Continue.'));
+  assert.deepEqual((await request('/api/snippets', { body: { snippets: ['  One  ', '', 'Two'] } })).j.snippets, ['One', 'Two']);
+  assert.deepEqual((await request('/api/snippets')).j.snippets, ['One', 'Two']);
+  assert.equal((await request('/api/snippets', { body: { snippets: 'x' } })).status, 400);
+});
+
+test('scheduled prompts: sent into the chat at the time; cancel, send now, the limit reset time', async () => {
+  const body = extra => ({ project: alpha, session, text: 'scheduled hello', mode: 'acceptEdits', ...extra });
+  assert.equal((await request('/api/schedule', { body: body({ at: Date.now() + 20 * 86400e3 }) })).status, 400, 'not more than 14 days ahead');
+  assert.equal((await request('/api/schedule', { body: body({ session: '00000000-0000-4000-8000-000000000000', at: Date.now() }) })).status, 404);
+  assert.equal((await request('/api/schedule', { body: body({ text: ' ', at: Date.now() }) })).status, 400);
+  const later = (await request('/api/schedule', { body: body({ at: Date.now() + 3600e3, text: 'much later' }) })).j;
+  assert.equal(later.state, 'waiting');
+  let list = await request(`/api/schedule?session=${session}`);
+  assert.deepEqual(list.j.items.map(o => o.text), ['much later']);
+  assert.equal((await request('/api/schedule/cancel', { body: { id: later.id } })).status, 200);
+  assert.equal((await request('/api/schedule/cancel', { body: { id: later.id } })).status, 404);
+  // due in a moment: the timer (KUMANDA_TICK_MS) sends it into the chat
+  const soon = (await request('/api/schedule', { body: body({ at: Date.now() + 300 }) })).j;
+  const events = await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'scheduled hello'), { timeout: 10000 });
+  assert.ok(events.some(o => o.type === 'text' && o.text.includes('scheduled hello')));
+  assert.ok(!(await request(`/api/schedule?session=${session}`)).j.items.some(o => o.id === soon.id), 'a sent one leaves the list');
+  // "Send now"
+  const manual = (await request('/api/schedule', { body: body({ at: Date.now() + 3600e3, text: 'sent by hand' }) })).j;
+  assert.equal((await request('/api/schedule/run', { body: { id: manual.id } })).status, 200);
+  await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'sent by hand'));
+  // The fake Claude reports no reset time: "when the limit resets" cannot be scheduled yet.
+  list = await request(`/api/schedule?session=${session}`);
+  assert.equal(list.j.limitResetsAt, null);
+  assert.equal((await request('/api/schedule', { body: body({ afterLimit: true }) })).status, 409);
+});
+
+test('git: status, file diff and commit diff of a project (read only)', async () => {
+  const dir = path.join(projectsDir, 'Alpha');
+  const g = (...a) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...a], { cwd: dir, encoding: 'utf8' });
+  const none = await request(`/api/project/${alpha}/git`);
+  assert.equal(none.j.repo, false, 'not a repository yet');
+  g('init', '-q', '-b', 'main'); g('add', 'index.html'); g('commit', '-q', '-m', 'First commit');
+  fs.appendFileSync(path.join(dir, 'index.html'), '\n<p>changed line</p>');
+  const st = await request(`/api/project/${alpha}/git`);
+  assert.equal(st.j.repo, true);
+  assert.equal(st.j.branch, 'main');
+  assert.ok(st.j.files.some(f => f.path === 'index.html' && f.status === 'modified'));
+  assert.ok(st.j.files.some(f => f.path === 'site/index.html' && f.status === 'new'));
+  assert.equal(st.j.commits[0].subject, 'First commit');
+  const diff = await request(`/api/project/${alpha}/git/diff?path=index.html`);
+  assert.ok(diff.j.text.includes('+<p>changed line</p>'));
+  const commit = await request(`/api/project/${alpha}/git/diff?commit=${st.j.commits[0].hash}`);
+  assert.ok(commit.j.text.includes('First commit') && commit.j.text.includes('+<!doctype html>'));
+  for (const q of ['path=../outside.txt', 'path=--output=x', 'commit=HEAD;rm', 'path=C:/x', '']) {
+    assert.equal((await request(`/api/project/${alpha}/git/diff?${q}`)).status, 400, q);
+  }
+  fs.rmSync(path.join(dir, '.git'), { recursive: true, force: true }); // the later tests expect no repository
 });
 
 test('logout: the control and product cookies become invalid together', async () => {

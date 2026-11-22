@@ -15,6 +15,10 @@ import { readFileForView, safePath, listFolder, sessionFile, listSessions, findP
 import { EFFORTS, MODELS, MODES, setNotifier, effortSettings, readHistory, send, closeAllRuns, findRun, listRuns, lastRequest, getLastLimit } from './src/sessions.mjs';
 import * as push from './src/push.mjs';
 import { interleave, askBtw, btwExists, btwQuestions } from './src/btw.mjs';
+import { DRAFT_KEY, getDraft, setDraft, getSnippets, setSnippets, SNIPPET_LIMIT, SNIPPET_TEXT, chatFlags, setChatFlags } from './src/store.mjs';
+import { listScheduled, addScheduled, removeScheduled, runScheduled, limitResetTime, onScheduleEvent } from './src/schedule.mjs';
+import { gitStatus, gitDiff, validGitPath, validHash } from './src/git.mjs';
+import { searchChats } from './src/search.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const WEB = path.join(ROOT, 'web');
@@ -251,7 +255,7 @@ api.add('POST', '/api/project-add', async ({ req, res }) => {
 api.add('GET', '/api/project/:pid', async ({ res, params }) => {
   const project = await getProject(params.pid);
   const live = new Map(listRuns().filter(r => r.project === project.id).map(r => [r.session, r.state]));
-  const sessions = (await listSessions(project)).map(s => ({ id: s.id, title: s.title, mtime: s.mtime, live: live.get(s.id) || null }));
+  const sessions = (await listSessions(project)).map(s => ({ id: s.id, title: s.title, mtime: s.mtime, live: live.get(s.id) || null, ...chatFlags(s.id) }));
   // New live sessions whose transcript has not been written yet show up in the list too.
   for (const [session, state] of live) if (!sessions.some(s => s.id === session)) sessions.unshift({ id: session, title: 'New chat', mtime: Date.now(), live: state });
   json(res, 200, { project: projectSummary(project), sessions });
@@ -351,8 +355,17 @@ function launch([command, prefix], args) {
 }
 api.add('POST', '/api/project/:pid/vscode', async ({ req, res, params }) => {
   const project = await getProject(params.pid);
-  const { session } = await readJson(req, 4096);
+  const { session, file } = await readJson(req, 4096);
   if (session != null && (typeof session !== 'string' || !/^[0-9a-f-]{36}$/i.test(session))) throw new HttpError(400, 'Invalid session');
+  if (file != null) {
+    // One file of the project, opened in the project's window (the file viewer's "VS Code" button).
+    const target = typeof file === 'string' ? safePath(project, file) : null;
+    if (!target || !fs.statSync(target).isFile()) throw new HttpError(404, 'File not found');
+    const command = vscodeCommand();
+    if (!command) throw new HttpError(501, 'VS Code was not found on this computer (set "vscode" in config.json to Code.exe)');
+    launch(command, [project.path, target]);
+    return json(res, 200, { ok: true });
+  }
   if (session && !await sessionFile(project, session)) throw new HttpError(404, 'This chat has no transcript yet; wait for the first reply');
   const command = vscodeCommand();
   if (!command) throw new HttpError(501, 'VS Code was not found on this computer (set "vscode" in config.json to Code.exe)');
@@ -417,7 +430,106 @@ api.add('POST', '/api/session/:sid/mode', async ({ req, res, params }) => {
   json(res, 200, r.snapshot());
 });
 
-api.add('GET', '/api/runs', ({ res }) => json(res, 200, { runs: listRuns() }));
+// Every open Claude process with its chat title: the "Now" list at the top of the sidebar.
+api.add('GET', '/api/runs', async ({ res }) => {
+  const runs = listRuns();
+  const titles = new Map();
+  for (const pid of new Set(runs.map(r => r.project))) {
+    const project = await findProject(pid);
+    if (project) for (const s of await listSessions(project)) titles.set(s.id, s.title);
+  }
+  json(res, 200, { runs: runs.map(r => ({ ...r, title: titles.get(r.session) || 'New chat' })) });
+});
+
+// ── chat list: pin, archive, rename ──
+api.add('POST', '/api/project/:pid/session/:sid/meta', async ({ req, res, params }) => {
+  const project = await getProject(params.pid);
+  const file = await sessionFile(project, params.sid);
+  if (!file) throw new HttpError(404, 'Session not found');
+  const g = await readJson(req, 8192);
+  if (g.title != null) {
+    const title = typeof g.title === 'string' ? g.title.replace(/\s+/g, ' ').trim() : '';
+    if (!title || title.length > 120) throw new HttpError(400, 'The title must be 1–120 characters');
+    const r = findRun(params.sid);
+    if (r && !r.closed && r.state !== 'ready') throw new HttpError(409, 'Claude is working on this chat; rename it when it is done');
+    // The same line Claude Code's /rename writes, so the terminal and VS Code show the new name too.
+    fs.appendFileSync(file, JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: params.sid }) + '\n');
+  }
+  json(res, 200, { ok: true, ...setChatFlags(params.sid, g) });
+});
+
+// ── search: chat titles everywhere; with `pid`, inside that project's messages too ──
+api.add('GET', '/api/search', async ({ res, url }) => {
+  const pid = url.searchParams.get('pid');
+  const projects = pid ? [await getProject(pid)] : await listProjects();
+  json(res, 200, await searchChats(projects, url.searchParams.get('q') || '', { content: Boolean(pid) }));
+});
+
+// ── drafts shared between devices ──
+api.add('GET', '/api/drafts', ({ res, url }) => {
+  const key = url.searchParams.get('key') || '';
+  if (!DRAFT_KEY.test(key)) throw new HttpError(400, 'Invalid key');
+  json(res, 200, getDraft(key));
+});
+api.add('POST', '/api/drafts', async ({ req, res }) => {
+  const { key, text, at } = await readJson(req, 512 * 1024);
+  if (!DRAFT_KEY.test(String(key)) || typeof text !== 'string' || !Number.isFinite(at)) throw new HttpError(400, 'Invalid draft');
+  json(res, 200, setDraft(key, text, Math.min(at, Date.now() + 60e3)));
+});
+
+// ── saved prompts ──
+api.add('GET', '/api/snippets', ({ res }) => json(res, 200, { snippets: getSnippets() }));
+api.add('POST', '/api/snippets', async ({ req, res }) => {
+  const { snippets } = await readJson(req, 512 * 1024);
+  if (!Array.isArray(snippets) || snippets.length > SNIPPET_LIMIT || snippets.some(s => typeof s !== 'string' || s.length > SNIPPET_TEXT)) {
+    throw new HttpError(400, `At most ${SNIPPET_LIMIT} saved prompts of ${SNIPPET_TEXT} characters`);
+  }
+  json(res, 200, { snippets: setSnippets(snippets) });
+});
+
+// ── scheduled prompts ──
+api.add('GET', '/api/schedule', ({ res, url }) => json(res, 200, { items: listScheduled(url.searchParams.get('session')), limitResetsAt: limitResetTime() }));
+api.add('POST', '/api/schedule', async ({ req, res }) => {
+  const g = await readJson(req, 128 * 1024);
+  const project = await getProject(String(g.project || ''));
+  if (typeof g.session !== 'string' || !await sessionFile(project, g.session)) throw new HttpError(404, 'Start the chat first: a prompt can only be scheduled into an existing chat');
+  const text = typeof g.text === 'string' ? g.text.trim() : '';
+  if (!text || text.length > 100000) throw new HttpError(400, 'Empty or too long prompt');
+  if (g.mode != null && !MODES.includes(g.mode)) throw new HttpError(400, 'Invalid mode');
+  if (g.model != null && !MODELS.includes(g.model)) throw new HttpError(400, 'Invalid model');
+  if (g.effort != null && !EFFORTS.includes(g.effort)) throw new HttpError(400, 'Invalid effort');
+  let at = Number(g.at);
+  if (g.afterLimit) {
+    const reset = limitResetTime();
+    if (!reset) throw new HttpError(409, 'The reset time of the usage limit is not known yet (it is learned from Claude\'s replies)');
+    at = reset + 60e3; // a minute of margin
+  }
+  if (!Number.isFinite(at) || at < Date.now() - 60e3 || at > Date.now() + 14 * 86400e3) throw new HttpError(400, 'Pick a time within the next 14 days');
+  try {
+    json(res, 200, addScheduled({ project: project.id, session: g.session, text, at, mode: g.mode, model: g.model, effort: g.effort, afterLimit: g.afterLimit }));
+  } catch (e) { throw new HttpError(e.status || 500, e.message); }
+});
+api.add('POST', '/api/schedule/cancel', async ({ req, res }) => {
+  if (!removeScheduled(String((await readJson(req, 4096)).id))) throw new HttpError(404, 'Not found (it may have been sent already)');
+  json(res, 200, { ok: true });
+});
+api.add('POST', '/api/schedule/run', async ({ req, res }) => {
+  if (!await runScheduled(String((await readJson(req, 4096)).id))) throw new HttpError(404, 'Not found (it may have been sent already)');
+  json(res, 200, { ok: true });
+});
+
+// ── git (read only) ──
+api.add('GET', '/api/project/:pid/git', async ({ res, params }) => json(res, 200, await gitStatus((await getProject(params.pid)).path)));
+api.add('GET', '/api/project/:pid/git/diff', async ({ res, params, url }) => {
+  const project = await getProject(params.pid);
+  const file = url.searchParams.get('path'), commit = url.searchParams.get('commit');
+  if (file != null && !validGitPath(file)) throw new HttpError(400, 'Invalid path');
+  if (commit != null && !validHash(commit)) throw new HttpError(400, 'Invalid commit');
+  if (!file && !commit) throw new HttpError(400, 'A path or a commit is needed');
+  const d = await gitDiff(project.path, { file, commit });
+  if (d.error) throw new HttpError(400, d.error);
+  json(res, 200, d);
+});
 
 // notifications
 api.add('GET', '/api/push/key', ({ res }) => json(res, 200, { key: push.publicKey(), subscribers: push.subscriberCount() }));
@@ -447,6 +559,13 @@ const deviceValid = key => auth.deviceList().some(d => key.startsWith(d.id));
 setNotifier(({ kind, project, session, text }) => {
   const title = kind === 'permission' ? `${project.name}: waiting for permission` : kind === 'error' ? `${project.name}: error` : `${project.name}: Claude is done`;
   push.notify({ title, body: text, url: `/#/p/${project.id}/s/${session}`, tag: session }, deviceValid).catch(() => {});
+});
+// A scheduled prompt that could not go out is reported; a sent one shows up in the chat (and notifies when Claude is done).
+onScheduleEvent(({ kind, item, error }) => {
+  if (kind === 'sent') return;
+  const title = kind === 'missed' ? 'A scheduled prompt was not sent' : 'A scheduled prompt failed';
+  const body = kind === 'missed' ? 'The computer was off or asleep at the time. Send it again from the chat.' : error;
+  push.notify({ title, body, url: `/#/p/${item.project}/s/${item.session}`, tag: `schedule-${item.id}` }, deviceValid).catch(() => {});
 });
 
 // ───────────── control server ─────────────

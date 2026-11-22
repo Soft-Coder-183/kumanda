@@ -119,8 +119,13 @@ function saveLimit(limit) {
   try { atomicWrite(LIMIT_FILE, JSON.stringify(lastLimit)); } catch { /* not writable: keep it in memory */ }
 }
 
-/** Model and effort of the last main API request in the transcript. Claude Code writes every request as an
- *  `api-request` line (`params.output_config.effort`); it is the only reliable source of "which effort is it using now". */
+/** Tokens in the context window after an API call: what was sent (new + cache write + cache read) plus the reply. */
+export const contextTokens = u => (u && typeof u === 'object'
+  ? (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0) : 0);
+
+/** Model and effort of the last main API request in the transcript, and the context size after the last reply. Claude
+ *  Code writes every request as an `api-request` line (`params.output_config.effort`); it is the only reliable source of
+ *  "which effort is it using now". The context comes from the `usage` of the last main-chat assistant message. */
 export async function lastRequest(file) {
   let fh;
   try { fh = await fsp.open(file, 'r'); } catch { return null; }
@@ -130,15 +135,24 @@ export async function lastRequest(file) {
     const buf = Buffer.alloc(size - start);
     const { bytesRead } = await fh.read(buf, 0, buf.length, start);
     const lines = buf.subarray(0, bytesRead).toString('utf8').split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i].includes('"api-request"') || !lines[i].includes('output_config')) continue;
+    let request = null, context = null;
+    for (let i = lines.length - 1; i >= 0 && (!request || context === null); i--) {
+      const l = lines[i];
+      if (context === null && l.includes('"type":"assistant"') && l.includes('"usage"')) {
+        try {
+          const o = JSON.parse(l);
+          if (o.type === 'assistant' && !o.isSidechain && o.message?.usage) context = contextTokens(o.message.usage);
+        } catch { /* partial line */ }
+      }
+      if (request || !l.includes('"api-request"') || !l.includes('output_config')) continue;
       let o;
-      try { o = JSON.parse(lines[i]); } catch { continue; }
+      try { o = JSON.parse(l); } catch { continue; }
       if (o.type !== 'api-request' || (o.querySource && !['sdk', 'repl_main_thread'].includes(o.querySource))) continue;
       const effort = o.params?.output_config?.effort;
-      if (typeof effort === 'string') return { effort, model: typeof o.params.model === 'string' ? o.params.model : null, at: Date.parse(o.timestamp) || 0 };
+      if (typeof effort === 'string') request = { effort, model: typeof o.params.model === 'string' ? o.params.model : null, at: Date.parse(o.timestamp) || 0 };
     }
-    return null;
+    if (!request && context === null) return null;
+    return { ...(request || { effort: null, model: null, at: 0 }), context };
   } finally { await fh.close(); }
 }
 
@@ -194,6 +208,9 @@ class Run {
     this.lastActivity = Date.now();
     this.stderr = '';
     this.lastRequest = null;    // { effort, model } of the last API request (from the transcript)
+    this.context = null;        // tokens in the context window after the last reply
+    this.turnStart = 0;         // when the current work started (for "working for 3 min")
+    this.finishedAt = 0;        // when the last turn finished
     this.effortRead = false;
     this.#start(resume);
     if (resume) this.#readLastRequest();
@@ -207,7 +224,8 @@ class Run {
 
   snapshot() {
     return { type: 'status', state: this.state, mode: this.mode, model: this.model, requestedModel: this.requestedModel, effort: this.effort,
-      limit: this.limit, lastRequest: this.lastRequest, generation: this.generation };
+      limit: this.limit, lastRequest: this.lastRequest, context: this.context, turnStart: this.turnStart, finishedAt: this.finishedAt,
+      generation: this.generation };
   }
 
   #start(resume) {
@@ -303,6 +321,10 @@ class Run {
           this.#publish(it);
         }
         if (m.type === 'assistant' && !this.effortRead) { this.effortRead = true; this.#readLastRequest(); }
+        if (m.type === 'assistant' && !m.parent_tool_use_id && m.message?.usage) {
+          const tokens = contextTokens(m.message.usage);
+          if (tokens && tokens !== this.context) { this.context = tokens; this.#transient(this.snapshot()); }
+        }
         break;
       case 'control_request': this.#request(m); break;
       case 'control_response': {
@@ -316,6 +338,7 @@ class Run {
       case 'result': {
         this.openTurns = Math.max(0, this.openTurns - 1);
         this.streaming = null;
+        if (this.openTurns === 0) { this.finishedAt = Date.now(); this.turnStart = 0; }
         for (const req of [...this.pending.keys()]) this.#closePermission(req, 'cancelled');
         const interrupted = this.interruptRequested && m.subtype !== 'success';
         this.interruptRequested = false;
@@ -345,6 +368,7 @@ class Run {
     const r = await lastRequest(path.join(logDir(this.project), `${this.session}.jsonl`)).catch(() => null);
     if (!r || (this.lastRequest && r.effort === this.lastRequest.effort && r.model === this.lastRequest.model && r.at === this.lastRequest.at)) return;
     this.lastRequest = r;
+    if (r.context && !this.context) this.context = r.context;
     this.#transient(this.snapshot());
   }
 
@@ -406,6 +430,7 @@ class Run {
       ...images.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.type, data: i.data } })),
       ...(text ? [{ type: 'text', text }] : []),
     ];
+    if (this.openTurns === 0) this.turnStart = Date.now();
     this.openTurns++;
     this.lastActivity = Date.now();
     this.#publish({ type: 'user', text, images: images.length });
@@ -488,7 +513,8 @@ export const findRun = session => runs.get(session) || null;
 
 export function listRuns() {
   return [...runs.values()].filter(r => !r.closed)
-    .map(r => ({ session: r.session, project: r.project.id, projectName: r.project.name, state: r.state }));
+    .map(r => ({ session: r.session, project: r.project.id, projectName: r.project.name, state: r.state, turnStart: r.turnStart,
+      finishedAt: r.finishedAt, lastText: shorten(r.lastText.replace(/\s+/g, ' '), 160) }));
 }
 
 /** now: if Claude is working, interrupts the running turn and sends the prompt right away (Claude Code's Ctrl+Enter). */
