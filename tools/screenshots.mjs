@@ -234,6 +234,38 @@ try {
   await m.keyboard.press('Enter');
   await m.waitForSelector('.msg.claude >> text=effort: high');
   await m.selectOption('.effort-select', '');
+  // The mouse wheel scrolls the chat (the chat area must stay a bounded scroll box), and the chat opens at the end.
+  const before = await m.evaluate(() => document.querySelector('#main .scroll').scrollTop);
+  if (before < 50) errors.push(`the chat did not open at the end (scrollTop ${before})`);
+  await m.mouse.move(700, 300); await m.mouse.wheel(0, -600); await wait(300);
+  const after = await m.evaluate(() => document.querySelector('#main .scroll').scrollTop);
+  if (!(after < before)) errors.push(`the mouse wheel did not scroll the chat (${before} → ${after})`);
+  await m.waitForSelector('.jump-bottom:not([hidden])');
+  // Search everything (Ctrl+K), the chat menu, the Changes tab and the shortcut list open and close.
+  await m.keyboard.press('Control+k');
+  await m.waitForSelector('.palette input');
+  await m.keyboard.type('note');
+  await m.waitForSelector('.palette-item >> text=Notebook');
+  if (process.env.KUMANDA_EXTRA_SHOTS) await m.screenshot({ path: path.join(process.env.KUMANDA_EXTRA_SHOTS, 'palette.png') });
+  await m.keyboard.press('Escape');
+  if (await m.$('.palette')) errors.push('Esc did not close the search');
+  await m.click('.chat-menu');
+  await m.waitForSelector('.menu >> text=Export as Markdown');
+  if (process.env.KUMANDA_EXTRA_SHOTS) await m.screenshot({ path: path.join(process.env.KUMANDA_EXTRA_SHOTS, 'chat-menu.png') });
+  await m.keyboard.press('Escape');
+  await m.click('#main .composer button[title="Saved prompts"]');
+  await m.waitForSelector('.menu >> text=Continue.');
+  await m.keyboard.press('Escape');
+  await m.goto(`${C}/#/p/${weather}/changes`);
+  await m.waitForSelector('#main .empty, #main .git-badge');
+  if (process.env.KUMANDA_EXTRA_SHOTS) await m.screenshot({ path: path.join(process.env.KUMANDA_EXTRA_SHOTS, 'changes.png') });
+  await m.goto(chatUrl);
+  await m.waitForSelector('table');
+  await m.keyboard.press('Escape');
+  await m.click('body', { position: { x: 700, y: 20 } });
+  await m.keyboard.press('?');
+  await m.waitForSelector('.shortcuts');
+  await m.keyboard.press('Escape');
 
   // Desktop: the project list is narrowed from its edge, the explorer opens, the file shows highlighted.
   await m.goto(`${C}/#/p/${weather}/f/${encodeURIComponent('src/screens/home.js')}`);

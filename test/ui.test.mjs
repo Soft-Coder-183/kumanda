@@ -63,6 +63,16 @@ const replies = {
   '/api/project-create': { project: { id: 'cccccccccccc', name: 'Test Project' } },
   '/api/devices': { devices: [{ id: 'k1', device: 'Android · Chrome', lastSeen: now, current: true }, { id: 'k2', device: 'Windows · Edge', lastSeen: now - 1e6, current: false }] },
   [`/api/project/${PID}/send`]: { session: SID, generation: 'n1' },
+  '/api/runs': { runs: [{ session: SID, project: PID, projectName: 'Alpha', state: 'running', turnStart: now - 5000, finishedAt: 0, title: 'First chat' },
+    { session: 'y', project: PID, projectName: 'Alpha', state: 'ready', turnStart: 0, finishedAt: now, title: 'Done chat' }] },
+  '/api/snippets': { snippets: ['Continue.', 'Run the tests'] },
+  '/api/schedule': { items: [{ id: 's1', project: PID, session: SID, text: 'later prompt', at: now + 3600e3, state: 'waiting' }], limitResetsAt: now + 7200e3 },
+  '/api/drafts': { text: '', at: 0 },
+  [`/api/project/${PID}/git`]: { repo: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0,
+    files: [{ path: 'src/a.js', status: 'modified', staged: false }, { path: 'n.txt', status: 'new', staged: false }],
+    commits: [{ hash: 'abcdef1234567890', short: 'abcdef1', author: 'E', at: now, subject: 'First commit' }] },
+  [`/api/project/${PID}/git/diff`]: { text: 'diff --git a/a b/a\n@@ -1 +1 @@\n-old line\n+new line\n', truncated: false },
+  '/api/search': { results: [{ project: PID, projectName: 'Alpha', session: SID, title: 'First chat', mtime: now, byTitle: false, matches: [{ role: 'user', text: 'hello world', at: now }] }], truncated: false },
   [`/api/project/${PID}/files`]: { path: '', truncated: true, entries: [
     { name: 'src', path: 'src', dir: true, size: 0, mtime: now }, { name: 'README.md', path: 'README.md', dir: false, size: 20, mtime: now },
     { name: 'a.js', path: 'src/a.js', dir: false, size: 20, mtime: now }] },
@@ -141,6 +151,7 @@ async function clickAll(from, skip = () => false) {
   await wait(20);
 }
 const texts = el => (el.children || []).flatMap(c => (c.nodeType === 3 ? [c.text] : texts(c)));
+const fileHrefOf = p => `#/p/${PID}/f/${encodeURIComponent(p)}`;
 const isBtwCard = e => /^btw( pending)?$/.test(e.className);
 
 test('UI: every view and event type draws without errors', async () => {
@@ -408,6 +419,37 @@ test('UI: every view and event type draws without errors', async () => {
   assert.ok(texts(root).some(m => m.includes('is not text')));
   await go(`#/p/${PID}/f/missing.txt`);
   assert.ok(texts(root).some(m => m.includes('File not found')));
+
+  // the "Now" list in the sidebar: the working chat and a finished one not looked at yet
+  assert.ok(texts(root).includes('Done chat') && texts(root).includes('done'), 'a finished, unseen chat is in "Now"');
+
+  // Changes tab (git): files, commits; a diff and a commit view go back to Changes
+  from = all.length;
+  await go(`#/p/${PID}/changes`);
+  assert.ok(texts(root).includes('⎇ main') && texts(root).includes('First commit'), 'branch and commits');
+  assert.ok(all.slice(from).some(e => e.tag === 'a' && e.href === `#/p/${PID}/diff/${encodeURIComponent('src/a.js')}`), 'a changed file links to its diff');
+  assert.ok(all.slice(from).some(e => e.tag === 'a' && e.href === fileHrefOf('n.txt')), 'a new file opens in the viewer');
+  from = all.length;
+  await go(`#/p/${PID}/diff/${encodeURIComponent('src/a.js')}`);
+  assert.ok(all.slice(from).some(e => e.className === 'ln d-add' && texts(e).join('') === '+new line'), 'additions are marked');
+  assert.ok(all.slice(from).some(e => e.className.includes('back') && e.href === `#/p/${PID}/changes` && e.title === 'Changes'), 'back to Changes');
+  await go(`#/p/${PID}/commit/abcdef1234567890`);
+  assert.ok(requests.some(i => i.url === `/api/project/${PID}/git/diff?commit=abcdef1234567890`));
+
+  // chats tab: message search shows the matching prompt
+  from = all.length;
+  await go(`#/p/${PID}`);
+  const search = all.slice(from).find(e => e.placeholder?.startsWith('Filter chats'));
+  search.value = 'hello';
+  for (const f of search.listeners.keydown) await f({ key: 'Enter', preventDefault() {} });
+  await wait(30);
+  assert.ok(requests.some(i => i.url === `/api/search?pid=${PID}&q=hello`), 'the message search went out');
+  assert.ok(all.slice(from).some(e => e.tag === 'mark' && texts(e).join('') === 'hello'), 'the match is marked');
+  await clickAll(from);
+
+  // share page: the shared text goes into the picked project's new chat
+  await go('#/share');
+  assert.ok(texts(root).includes('Share to Claude'));
 
   // sidebar: ☰ opens a drawer on the phone, tapping outside closes it
   const sideButton = all.findLast(e => e.className.includes('side-button'));

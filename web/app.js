@@ -24,9 +24,13 @@ const newId = () => crypto.randomUUID?.()
   || '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
 
 async function api(url, body) {
-  const r = await fetch(url, body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kumanda': '1' }, body: JSON.stringify(body),
-  });
+  let r;
+  try {
+    r = await fetch(url, body === undefined ? {} : {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kumanda': '1' }, body: JSON.stringify(body),
+    });
+  } catch (x) { offline(true); throw new ApiError(0, 'No connection to the computer'); }
+  offline(false);
   let j = {};
   try { j = await r.json(); } catch { /* no body */ }
   if (r.status === 401 && !/^\/api\/(login|password|setup)/.test(url)) { showLogin(); throw new ApiError(401, 'Login required'); }
@@ -75,6 +79,73 @@ function toast(message) {
 }
 
 const esc = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ───────── connection banner: shown while the computer cannot be reached; a ping clears it ─────────
+let offlineTimer = 0;
+function offline(on) {
+  const bar = document.querySelector?.('.offline-bar');
+  if (!on) { if (bar) { bar.remove(); clearInterval(offlineTimer); offlineTimer = 0; refreshProjects?.(); } return; }
+  if (bar) return;
+  document.body.append(h('div', { class: 'offline-bar', role: 'status' }, 'No connection to the computer. Retrying…'));
+  offlineTimer = setInterval(() => fetch('/api/status').then(() => offline(false), () => {}), 4000);
+}
+
+// ───────── copying (navigator.clipboard needs https or localhost; otherwise a hidden textarea) ─────────
+async function copyText(text, what = 'Copied') {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const t = h('textarea', { value: text, style: 'position:fixed;opacity:0;top:0' });
+    document.body.append(t); t.select?.();
+    try { document.execCommand('copy'); } catch { /* not possible */ }
+    t.remove();
+  }
+  toast(what);
+}
+
+// ───────── appearance: theme and text size per device ─────────
+function applyAppearance() {
+  const root = document.documentElement;
+  if (!root) return;
+  const theme = store.get('kumanda.theme') || 'auto', size = store.get('kumanda.textSize') || 'm';
+  if (theme === 'auto') delete root.dataset.theme; else root.dataset.theme = theme;
+  root.dataset.size = size;
+}
+applyAppearance();
+
+// ───────── menus and sheets ─────────
+// One open at a time; Esc, a tap outside or a route change closes it. On the phone a menu is a sheet at the bottom.
+let openLayer = null;
+function closeLayer() { const l = openLayer; openLayer = null; l?.close(); }
+function layer(node, { modal = false, onClose } = {}) {
+  closeLayer();
+  const backdrop = h('div', { class: `layer-backdrop${modal ? ' modal' : ''}`, onclick: e => { if (e.target === backdrop) closeLayer(); } }, node);
+  const key = e => { if (e.key === 'Escape') { e.stopPropagation(); closeLayer(); } };
+  document.addEventListener('keydown', key, true);
+  document.body.append(backdrop);
+  openLayer = { node, close() { backdrop.remove(); document.removeEventListener('keydown', key, true); onClose?.(); } };
+  return openLayer;
+}
+/** items: { label, hint?, onClick, danger?, disabled? } | 'line' | a node. Next to the anchor on the desktop. */
+function openMenu(anchor, items, title) {
+  const menu = h('div', { class: 'menu', role: 'menu' },
+    title && h('div', { class: 'menu-title' }, title),
+    items.filter(Boolean).map(i => (i === 'line' ? h('div', { class: 'menu-line' }) : i.nodeType ? i
+      : h('button', { class: `menu-item${i.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', disabled: i.disabled,
+        onclick: () => { closeLayer(); i.onClick(); } }, h('span', {}, i.label), i.hint && h('span', { class: 'hint' }, i.hint)))));
+  layer(menu);
+  const r = anchor?.getBoundingClientRect?.();
+  if (r && isDesktop()) {
+    menu.classList.add('anchored');
+    const left = Math.min(Math.max(8, r.right - 260), innerWidth - 268);
+    const below = r.bottom + 6, above = innerHeight - r.top + 6;
+    if (r.bottom > innerHeight * 0.6) menu.style.bottom = `${above}px`; else menu.style.top = `${below}px`;
+    menu.style.left = `${left}px`;
+  }
+  menu.querySelector?.('button:not(:disabled)')?.focus();
+  return menu;
+}
+const menuButton = (label, items, attrs = {}) => h('button', { class: 'btn small flat', type: 'button', title: 'More', 'aria-label': 'More', ...attrs,
+  onclick: e => openMenu(e.currentTarget, typeof items === 'function' ? items() : items) }, label);
 
 function timeAgo(ms) {
   if (!ms) return '';
@@ -328,7 +399,33 @@ function showLogin() {
 // ───────── shell and routing ─────────
 let projects = [];
 let view = null; // the active view (cleaned up with close())
-let side, main, listEl, searchEl, explorer, treeEl, explorerNameEl, newProjectEl;
+let side, main, listEl, searchEl, explorer, treeEl, explorerNameEl, newProjectEl, nowEl;
+let runs = [];
+
+// Chats you have looked at since they last finished: a finished chat you have not seen is marked "done" in the Now list.
+const seen = (() => { try { return JSON.parse(store.get('kumanda.seen')) || {}; } catch { return {}; } })();
+function markSeen(sid) {
+  seen[sid] = Date.now();
+  const keys = Object.keys(seen);
+  if (keys.length > 200) for (const k of keys.sort((a, b) => seen[a] - seen[b]).slice(0, keys.length - 200)) delete seen[k];
+  store.set('kumanda.seen', JSON.stringify(seen));
+}
+const unseen = r => r.state === 'ready' && r.finishedAt && r.finishedAt > (seen[r.session] || 0);
+
+/** "Now": every open chat (working, waiting for you, or finished and not looked at yet) across all projects. */
+function drawNow() {
+  if (!nowEl) return;
+  const current = /^#\/p\/[0-9a-f]+\/s\/([0-9a-f-]+)/.exec(location.hash)?.[1];
+  const shown = runs.filter(r => r.state === 'running' || r.state === 'waiting' || unseen(r));
+  const order = { waiting: 0, running: 1, ready: 2 };
+  shown.sort((a, b) => order[a.state] - order[b.state] || (b.finishedAt || b.turnStart) - (a.finishedAt || a.turnStart));
+  nowEl.hidden = !shown.length;
+  nowEl.replaceChildren(h('div', { class: 'section-label' }, 'Now'), ...shown.map(r => h('a', { class: `row now-row${r.session === current ? ' selected' : ''}`, href: `#/p/${r.project}/s/${r.session}` },
+    h('span', { class: `dot ${r.state}` }),
+    h('div', { class: 'body' }, h('div', { class: 'name' }, r.title),
+      h('div', { class: 'info' }, `${r.projectName} · ${r.state === 'waiting' ? 'waiting for you' : r.state === 'running' ? `working${r.turnStart ? ` ${formatDuration(Date.now() - r.turnStart)}` : ''}` : `done ${timeAgo(r.finishedAt)}`}`)),
+    r.state === 'ready' && h('span', { class: 'badge good' }, 'done'))));
+}
 
 /** The "new project" form under the search box in the sidebar: creates an empty folder in the projects folder, goes to a new chat. */
 function newProjectForm() {
@@ -423,13 +520,14 @@ function shell() {
   side = h('aside', { id: 'side' },
     h('div', { class: 'top' },
       h('div', { class: 'title' }, h('h1', {}, 'Kumanda')),
+      h('button', { class: 'btn small flat', type: 'button', title: 'Search everything (Ctrl+K)', 'aria-label': 'Search everything', onclick: () => openPalette() }, 'Search'),
       h('a', { class: 'btn small', href: '#/products' }, 'Products'),
       h('a', { class: 'btn icon flat', href: '#/settings', title: 'Settings', 'aria-label': 'Settings' }, '⚙'),
       h('button', { class: 'btn icon flat side-close', type: 'button', title: 'Close the project list (Ctrl+B)', 'aria-label': 'Close the project list', onclick: toggleSide }, '«')),
     h('div', { class: 'search' }, searchEl,
       h('button', { class: 'btn icon small', type: 'button', title: 'New project', 'aria-label': 'New project', onclick: () => newProjectForm() }, '＋')),
     newProjectEl = h('div', { class: 'new-project', hidden: true }),
-    h('div', { class: 'scroll' }, listEl),
+    h('div', { class: 'scroll' }, nowEl = h('div', { class: 'list now', hidden: true }), listEl),
     handle('handle', { start: () => layout.sideWidth, set: setSide }));
   treeEl = h('div', { class: 'tree', role: 'tree', 'aria-label': 'Project files' });
   explorerNameEl = h('div', { class: 'explorer-name' });
@@ -540,7 +638,7 @@ function drawTree() {
       rows.push(g.dir
         ? h('button', { ...common, type: 'button', 'aria-expanded': isOpen ? 'true' : 'false', onclick: () => toggleFolder(g.path) },
           h('span', { class: 'arrow' }, isOpen ? '▾' : '▸'), h('span', { class: 'name' }, g.name))
-        : h('a', { ...common, href: fileHref(pid, g.path) },
+        : h('a', { ...common, href: fileHref(pid, g.path), onclick: () => fileReturn.delete(pid) },
           h('span', { class: 'arrow' }), fileIcon(g.name), h('span', { class: 'name' }, g.name)));
       if (isOpen) walk(g.path, d + 1);
     }
@@ -564,7 +662,11 @@ function setExplorer(pid, file) {
 }
 
 async function refreshProjects() {
-  try { projects = (await api('/api/projects')).projects; drawProjects(); } catch { /* the login screen is shown, or no network */ }
+  try {
+    const [p, r] = await Promise.all([api('/api/projects'), api('/api/runs')]);
+    projects = p.projects; runs = r.runs || [];
+    drawProjects(); drawNow();
+  } catch { /* the login screen is shown, or no network */ }
 }
 
 function drawProjects() {
@@ -582,9 +684,81 @@ function drawProjects() {
   }));
   if (!shown.length) listEl.append(h('div', { class: 'empty' }, q ? 'No matching project' : 'No projects found'));
   if (explorerPid) explorerNameEl.textContent = projectName(explorerPid) || 'Project';
+  if (q && shown.length === 0) listEl.append(h('button', { class: 'btn small flat', type: 'button', onclick: () => openPalette(searchEl.value) }, `Search chats for "${searchEl.value.trim()}" ›`));
 }
 
 const projectName = pid => projects.find(p => p.id === pid)?.name || '';
+const currentPid = () => /^#\/p\/([0-9a-f]{12})/.exec(location.hash)?.[1] || null;
+
+// ───────── search everything (Ctrl+K): projects, chats, actions ─────────
+const SHORTCUTS = [
+  ['Ctrl+K', 'Search projects, chats and actions'], ['Ctrl+B', 'Show / hide the project list'], ['Ctrl+Shift+E', 'Show / hide the project files'],
+  ['Alt+N', 'New chat in this project'], ['Enter', 'Send (queued while Claude works)'], ['Ctrl+Enter', 'Interrupt and send now'],
+  ['Shift+Enter', 'New line'], ['Esc', 'Stop Claude (in a chat, while it works)'], ['↑ / ↓', 'Earlier prompts of this chat (in an empty composer)'],
+  ['/btw …', 'Side question that does not interrupt the work'], ['?', 'This list'],
+];
+function showShortcuts() {
+  layer(h('div', { class: 'dialog', role: 'dialog', 'aria-label': 'Keyboard shortcuts' },
+    h('div', { class: 'dialog-head' }, h('h2', {}, 'Keyboard shortcuts'), h('button', { class: 'btn icon flat small', type: 'button', 'aria-label': 'Close', onclick: closeLayer }, '×')),
+    h('table', { class: 'shortcuts' }, SHORTCUTS.map(([k, d]) => h('tr', {}, h('td', {}, h('kbd', {}, k)), h('td', {}, d))))), { modal: true });
+}
+
+let paletteChats = { pid: null, list: [] };
+function openPalette(initial = '') {
+  const pid = currentPid();
+  const input = h('input', { type: 'search', placeholder: 'Search projects, chats, actions…', 'aria-label': 'Search', value: initial, autocomplete: 'off' });
+  const listEl = h('div', { class: 'palette-list', role: 'listbox' });
+  let items = [], active = 0, remote = [], remoteFor = '', timer = 0;
+  const go = href => { closeLayer(); location.hash = href; };
+  const actions = () => [
+    pid && { group: 'Actions', label: `New chat in ${projectName(pid) || 'this project'}`, hint: 'Alt+N', run: () => go(`#/p/${pid}/new`) },
+    pid && { group: 'Actions', label: 'Changes (git)', run: () => go(`#/p/${pid}/changes`) },
+    pid && { group: 'Actions', label: 'Products of this project', run: () => go(`#/p/${pid}/products`) },
+    { group: 'Actions', label: 'All products', run: () => go('#/products') },
+    { group: 'Actions', label: 'Scheduled prompts', run: () => go('#/settings') },
+    { group: 'Actions', label: 'Settings', run: () => go('#/settings') },
+    { group: 'Actions', label: 'Keyboard shortcuts', hint: '?', run: () => { closeLayer(); showShortcuts(); } },
+  ].filter(Boolean);
+  function draw() {
+    const q = input.value.trim().toLocaleLowerCase('tr');
+    const match = s => !q || String(s).toLocaleLowerCase('tr').includes(q);
+    const chats = (paletteChats.pid === pid ? paletteChats.list : []).filter(s => match(s.title)).slice(0, 8)
+      .map(s => ({ group: `Chats in ${projectName(pid)}`, label: s.title, hint: timeAgo(s.mtime), run: () => go(`#/p/${pid}/s/${s.id}`) }));
+    const projectItems = projects.filter(p => match(p.name)).slice(0, q ? 8 : 6)
+      .map(p => ({ group: 'Projects', label: p.name, hint: p.lastActivity ? timeAgo(p.lastActivity) : '', run: () => go(`#/p/${p.id}/last`) }));
+    const elsewhere = q.length >= 2 && remoteFor === q ? remote.filter(r => r.project !== pid).slice(0, 10)
+      .map(r => ({ group: 'Chats in other projects', label: r.title, hint: r.projectName, run: () => go(`#/p/${r.project}/s/${r.session}`) })) : [];
+    const deep = pid && q.length >= 2 ? [{ group: 'Search', label: `Search messages in ${projectName(pid)} for "${input.value.trim()}"`, run: () => { chatSearch.set(pid, input.value.trim()); go(`#/p/${pid}`); } }] : [];
+    items = [...chats, ...projectItems, ...elsewhere, ...deep, ...actions().filter(a => match(a.label))];
+    active = Math.min(active, Math.max(0, items.length - 1));
+    let group = '';
+    listEl.replaceChildren(...items.flatMap((it, i) => {
+      const head = it.group !== group ? [h('div', { class: 'palette-group' }, (group = it.group))] : [];
+      return [...head, h('button', { class: `palette-item${i === active ? ' active' : ''}`, type: 'button', role: 'option', onclick: () => it.run(),
+        onmousemove: () => { if (active !== i) { active = i; draw(); } } }, h('span', { class: 'pl-label' }, it.label), it.hint && h('span', { class: 'hint' }, it.hint))];
+    }));
+    if (!items.length) listEl.append(h('div', { class: 'empty' }, 'Nothing found'));
+    listEl.querySelector?.('.palette-item.active')?.scrollIntoView?.({ block: 'nearest' });
+  }
+  input.addEventListener('input', () => {
+    active = 0; draw();
+    clearTimeout(timer);
+    const q = input.value.trim().toLocaleLowerCase('tr');
+    if (q.length >= 2) timer = setTimeout(async () => {
+      try { const v = await api(`/api/search?q=${encodeURIComponent(q)}`); remote = v.results; remoteFor = q; draw(); } catch { /* offline */ }
+    }, 250);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % Math.max(1, items.length); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % Math.max(1, items.length); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); items[active]?.run(); }
+  });
+  layer(h('div', { class: 'palette', role: 'dialog', 'aria-label': 'Search everything' }, input, listEl), { modal: true });
+  draw();
+  input.focus();
+  if (initial) input.dispatchEvent?.(new Event('input'));
+  if (pid && paletteChats.pid !== pid) api(`/api/project/${pid}`).then(v => { paletteChats = { pid, list: v.sessions }; draw(); }).catch(() => {});
+}
 
 /** With `pid` there is an explorer (Files) button on the right. `backLabel` names where the back arrow goes; on the desktop
  *  it is written next to the arrow (there the arrow is hidden only when it would go to the home page, the sidebar covers that). */
@@ -602,6 +776,7 @@ function topBar({ title, sub, back = '#/', backLabel = 'Back', right = [], pid }
 function route() {
   view?.close?.();
   view = null;
+  closeLayer();
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   app.classList.toggle('main-open', p.length > 0);
   app.classList.remove('side-drawer', 'explorer-drawer'); // picked from a drawer on the phone: close it
@@ -613,11 +788,15 @@ function route() {
     else if (p[2] === 'new') view = chatView(p[1], null);
     else if (p[2] === 'last') { openLastChat(p[1]); return; }
     else if (p[2] === 'f' && file) view = fileView(p[1], file);
-    else view = projectPage(p[1], p[2] === 'products' ? 'products' : 'chats');
+    else if (p[2] === 'diff' && p[3]) { let f = ''; try { f = decodeURIComponent(p.slice(3).join('/')); } catch { /* broken */ } view = diffView(p[1], { file: f }); }
+    else if (p[2] === 'commit' && p[3]) view = diffView(p[1], { commit: p[3] });
+    else view = projectPage(p[1], ['products', 'changes'].includes(p[2]) ? p[2] : 'chats');
   } else if (p[0] === 'products') view = allProducts();
   else if (p[0] === 'settings') view = settingsPage();
+  else if (p[0] === 'share') view = shareView();
   else main.replaceChildren(h('div', { class: 'center muted' }, 'Pick a project on the left or look at Products.'));
   drawProjects();
+  drawNow();
 }
 
 /** #/p/<pid>/last: opens the project's latest chat (or the chats tab if there is none). The address is replaced so Back does not loop. */
@@ -636,12 +815,70 @@ function projectPage(pid, tab) {
   const title = h('h1', {}, projectName(pid) || 'Project');
   const sub = h('div', { class: 'sub' });
   main.replaceChildren(
-    topBar({ title, sub, pid, right: [h('a', { class: 'btn primary small', href: `#/p/${pid}/new` }, 'New chat')] }),
+    // Back: to the chat you came from (if any); on the desktop the sidebar covers "home".
+    topBar({ title, sub, pid, ...(lastChat.get(pid) ? { back: `#/p/${pid}/s/${lastChat.get(pid)}`, backLabel: 'Back to chat' } : {}),
+      right: [h('a', { class: 'btn primary small', href: `#/p/${pid}/new`, title: 'New chat (Alt+N)' }, 'New chat')] }),
     h('div', { class: 'tabs' },
       h('a', { class: `tab${tab === 'chats' ? ' selected' : ''}`, href: `#/p/${pid}` }, 'Chats'),
-      h('a', { class: `tab${tab === 'products' ? ' selected' : ''}`, href: `#/p/${pid}/products` }, 'Products')),
+      h('a', { class: `tab${tab === 'products' ? ' selected' : ''}`, href: `#/p/${pid}/products` }, 'Products'),
+      h('a', { class: `tab${tab === 'changes' ? ' selected' : ''}`, href: `#/p/${pid}/changes`, title: 'What changed in the project (git)' }, 'Changes')),
     h('div', { class: 'scroll' }, body));
   let cancelled = false;
+
+  // ── Chats: filter by title as you type; "Search messages" looks inside the chats ──
+  const query = h('input', { type: 'search', placeholder: 'Filter chats… (Enter: search inside messages)', 'aria-label': 'Search chats', value: chatSearch.get(pid) || '' });
+  const listBox = h('div', {});
+  let sessions = [];
+  function chatRow(s) {
+    const flag = (k, on) => async () => {
+      try { await api(`/api/project/${pid}/session/${s.id}/meta`, { [k]: on }); load(false); } catch (x) { toast(x.message); }
+    };
+    return h('div', { class: 'row-wrap' },
+      h('a', { class: 'row', href: `#/p/${pid}/s/${s.id}` },
+        h('span', { class: `dot ${s.live || ''}` }),
+        h('div', { class: 'body' }, h('div', { class: 'name' }, s.title, s.pinned && h('span', { class: 'badge', style: 'margin-left:6px' }, 'pinned')), h('div', { class: 'info' }, timeAgo(s.mtime))),
+        s.live === 'waiting' && h('span', { class: 'badge warn' }, 'waiting for answer'),
+        s.live === 'running' && h('span', { class: 'badge accent' }, 'running')),
+      menuButton('⋯', () => [
+        { label: s.pinned ? 'Unpin' : 'Pin to the top', onClick: flag('pinned', !s.pinned) },
+        { label: 'Rename…', onClick: () => renameChat(pid, s.id, s.title, () => load(false)) },
+        { label: s.archived ? 'Move back to the list' : 'Archive', hint: s.archived ? '' : 'hidden in "Archived"', onClick: flag('archived', !s.archived) },
+        'line',
+        { label: 'Open in VS Code', onClick: () => openInVSCode(pid, { session: s.id }) },
+      ], { class: 'btn small flat row-menu', title: 'Chat options', 'aria-label': `Options of ${s.title}` }));
+  }
+  function drawChats() {
+    const q = query.value.trim().toLocaleLowerCase('tr');
+    const shown = sessions.filter(s => !q || s.title.toLocaleLowerCase('tr').includes(q));
+    const active = shown.filter(s => !s.archived), archived = shown.filter(s => s.archived);
+    active.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); // pinned on top, otherwise newest first (as listed)
+    const k = `${pid}|archived`;
+    const box = archived.length ? h('details', { class: 'more', open: openBoxes.has(k) || Boolean(q), ontoggle: e => (e.currentTarget.open ? openBoxes.add(k) : openBoxes.delete(k)) },
+      h('summary', {}, `Archived (${archived.length})`), h('div', { class: 'list', style: 'padding:0' }, archived.map(chatRow))) : null;
+    listBox.replaceChildren(
+      active.length || archived.length ? h('div', { class: 'list', style: 'padding:0' }, active.map(chatRow))
+        : h('div', { class: 'empty' }, q ? 'No chat title matches. Press Enter to search inside the messages.' : 'No chats in this project yet. Start with "New chat".'),
+      ...[box].filter(Boolean));
+  }
+  async function searchMessages() {
+    const q = query.value.trim();
+    if (q.length < 2) return;
+    chatSearch.set(pid, q);
+    listBox.replaceChildren(h('div', { class: 'empty' }, 'Searching the messages…'));
+    try {
+      const v = await api(`/api/search?pid=${pid}&q=${encodeURIComponent(q)}`);
+      if (cancelled) return;
+      listBox.replaceChildren(
+        h('div', { class: 'toolbar' }, h('span', { class: 'muted small', style: 'flex:1' }, `${v.results.length} chat${v.results.length === 1 ? '' : 's'} with "${q}"${v.truncated ? ' (stopped early, refine the search)' : ''}`),
+          h('button', { class: 'btn small', type: 'button', onclick: () => { query.value = ''; chatSearch.delete(pid); drawChats(); } }, 'Clear')),
+        ...(v.results.length ? v.results.map(r => h('a', { class: 'search-hit', href: `#/p/${pid}/s/${r.session}` },
+          h('div', { class: 'name' }, r.title, h('span', { class: 'muted small' }, ` · ${timeAgo(r.mtime)}`)),
+          r.matches.map(m => h('div', { class: 'snippet' }, h('span', { class: 'badge' }, m.role === 'user' ? 'you' : 'Claude'), ' ', highlightText(m.text, q)))))
+          : [h('div', { class: 'empty' }, 'Not found in this project\'s chats.')]));
+    } catch (x) { if (x.status !== 401) listBox.replaceChildren(h('div', { class: 'empty' }, x.message)); }
+  }
+  query.addEventListener('input', () => { if (!query.value.trim()) chatSearch.delete(pid); drawChats(); });
+  query.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchMessages(); } });
 
   async function load(fresh) {
     try {
@@ -649,17 +886,19 @@ function projectPage(pid, tab) {
         const v = await api(`/api/project/${pid}`);
         if (cancelled) return;
         title.textContent = v.project.name; sub.textContent = v.project.path;
-        body.replaceChildren(
-          v.sessions.length ? h('div', { class: 'list', style: 'padding:0' }, v.sessions.map(s => h('a', { class: 'row', href: `#/p/${pid}/s/${s.id}` },
-            h('span', { class: `dot ${s.live || ''}` }),
-            h('div', { class: 'body' }, h('div', { class: 'name' }, s.title), h('div', { class: 'info' }, timeAgo(s.mtime))),
-            s.live === 'waiting' && h('span', { class: 'badge warn' }, 'waiting for answer'),
-            s.live === 'running' && h('span', { class: 'badge accent' }, 'running'))))
-            : h('div', { class: 'empty' }, 'No chats in this project yet. Start with "New chat".'),
-          h('div', { style: 'margin-top:18px;text-align:center' },
-            h('button', { class: 'btn flat small muted', onclick: async () => {
-              try { await api(`/api/project/${pid}/hide`, { hidden: true }); toast('Project hidden (undo in Settings)'); await refreshProjects(); location.hash = '#/'; } catch (x) { toast(x.message); }
-            } }, 'Hide this project from the list')));
+        sessions = v.sessions;
+        if (!body.contains?.(query)) {
+          body.replaceChildren(h('div', { class: 'toolbar' }, query, h('button', { class: 'btn small', type: 'button', onclick: searchMessages }, 'Search messages')), listBox,
+            h('div', { style: 'margin-top:18px;text-align:center' },
+              h('button', { class: 'btn flat small muted', onclick: async () => {
+                try { await api(`/api/project/${pid}/hide`, { hidden: true }); toast('Project hidden (undo in Settings)'); await refreshProjects(); location.hash = '#/'; } catch (x) { toast(x.message); }
+              } }, 'Hide this project from the list')));
+        }
+        if (chatSearch.get(pid) && !fresh) searchMessages(); else drawChats();
+      } else if (tab === 'changes') {
+        const v = await api(`/api/project/${pid}/git`);
+        if (cancelled) return;
+        redrawInPlace(body, ...changesPage(pid, v, () => load(false)));
       } else {
         const v = await api(`/api/project/${pid}/products?hidden${fresh ? '&fresh' : ''}`);
         if (cancelled) return;
@@ -681,22 +920,130 @@ function projectPage(pid, tab) {
 // ───────── all products ─────────
 function allProducts() {
   const body = h('div', { class: 'inner' }, h('div', { class: 'empty' }, 'Scanning projects…'));
-  main.replaceChildren(topBar({ title: 'Products', sub: 'The outputs of all projects' }), h('div', { class: 'scroll' }, body));
-  let cancelled = false;
+  const filter = h('input', { type: 'search', placeholder: 'Find a product (name, file, project)', 'aria-label': 'Find a product', oninput: () => draw() });
+  main.replaceChildren(topBar({ title: 'Products', sub: 'The outputs of all projects' }), h('div', { class: 'scroll' }, h('div', { class: 'inner', style: 'padding-bottom:0' }, filter), body));
+  let cancelled = false, groups = null;
   async function load() {
     try {
-      const v = await api('/api/products?hidden');
-      if (cancelled) return;
+      groups = (await api('/api/products?hidden')).groups;
+      if (!cancelled) draw();
+    } catch (x) { if (!cancelled && x.status !== 401) body.replaceChildren(h('div', { class: 'empty' }, x.message)); }
+  }
+  function draw() {
+    if (!groups) return;
+    const q = filter.value.trim().toLocaleLowerCase('tr');
+    const hit = (g, u) => !q || [u.name, u.path, u.title, g.project.name].some(x => String(x || '').toLocaleLowerCase('tr').includes(q));
+    const shown = groups.map(g => ({ ...g, products: g.products.filter(u => hit(g, u)) })).filter(g => g.products.length);
+    const v = { groups: shown };
+    {
       // Under the project title, split by chat like the project's Products tab.
       redrawInPlace(body, ...(v.groups.length ? v.groups.map(g => h('section', { class: 'project-group' },
         h('div', { class: 'project-group-head' },
           h('h2', {}, h('a', { href: `#/p/${g.project.id}/products`, style: 'color:inherit;text-decoration:none' }, `${g.project.name} ›`)),
           g.products.some(u => u.hidden) && showAllButton(g.project.id, g.products.filter(u => u.hidden), load, `Show hidden (${g.products.filter(u => u.hidden).length})`)),
         sessionGroups(g.project.id, g.products, g.sessions || {}, load)))
-        : [h('div', { class: 'empty' }, 'No products found in any project.')]));
-    } catch (x) { if (!cancelled && x.status !== 401) body.replaceChildren(h('div', { class: 'empty' }, x.message)); }
+        : [h('div', { class: 'empty' }, q ? 'No product matches.' : 'No products found in any project.')]));
+    }
   }
   load();
+  return { close() { cancelled = true; } };
+}
+
+// ───────── small shared pieces ─────────
+const chatSearch = new Map(); // pid → the message search left in the chats tab (it is still there when you come back)
+const fileReturn = new Map(); // pid → { href, label }: where the file viewer's back arrow goes when not to the chat
+
+/** A one-line text dialog (rename…). Resolves with the text, or null when cancelled. */
+function askText(title, value = '', { placeholder = '', button = 'Save' } = {}) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = v => { if (done) return; done = true; resolve(v); closeLayer(); };
+    const input = h('input', { type: 'text', value, placeholder, 'aria-label': title, maxlength: 120 });
+    layer(h('form', { class: 'dialog', role: 'dialog', 'aria-label': title, onsubmit: e => { e.preventDefault(); finish(input.value.trim() || null); } },
+      h('div', { class: 'dialog-head' }, h('h2', {}, title)), input,
+      h('div', { class: 'buttons', style: 'justify-content:flex-end;margin-top:12px' },
+        h('button', { class: 'btn', type: 'button', onclick: () => finish(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, button))),
+    { modal: true, onClose: () => { if (!done) { done = true; resolve(null); } } });
+    input.focus(); input.select?.();
+  });
+}
+
+async function renameChat(pid, sid, current, then) {
+  const title = await askText('Rename chat', current);
+  if (!title || title === current) return;
+  try { await api(`/api/project/${pid}/session/${sid}/meta`, { title }); toast('Renamed'); paletteChats.pid = null; then?.(title); refreshProjects(); }
+  catch (x) { if (x.status !== 401) toast(x.message); }
+}
+
+async function openInVSCode(pid, body) {
+  try {
+    const r = await api(`/api/project/${pid}/vscode`, body);
+    toast(body.file ? 'Opening the file in VS Code on the computer' : body.session ? `Opening VS Code on the computer${r.closedRun ? '; the chat continues there' : ''}` : 'Opening the project in VS Code on the computer');
+  } catch (x) { if (x.status !== 401) toast(x.message); }
+}
+
+/** Text with the search word marked (built from nodes, never HTML). */
+function highlightText(text, q) {
+  const lower = text.toLocaleLowerCase('tr'), k = q.toLocaleLowerCase('tr'), out = [];
+  let i = 0, j;
+  while (k && (j = lower.indexOf(k, i)) >= 0) { out.push(text.slice(i, j), h('mark', {}, text.slice(j, j + k.length))); i = j + k.length; }
+  out.push(text.slice(i));
+  return out.filter(x => x !== '');
+}
+
+// ───────── changes (git, read only) ─────────
+const GIT_BADGE = { modified: 'M', added: 'A', deleted: 'D', renamed: 'R', copied: 'C', conflict: '!', new: 'U', 'type changed': 'T' };
+function changesPage(pid, v, reload) {
+  if (!v.repo) return [h('div', { class: 'empty' }, v.reason || 'This project is not a git repository.')];
+  const toChanges = () => fileReturn.set(pid, { href: `#/p/${pid}/changes`, label: 'Changes' });
+  return [
+    h('div', { class: 'toolbar' },
+      h('span', { class: 'badge accent' }, `⎇ ${v.branch || '?'}`),
+      v.upstream && h('span', { class: 'muted small' }, v.upstream),
+      v.ahead > 0 && h('span', { class: 'badge', title: 'Commits not pushed yet' }, `↑ ${v.ahead} to push`),
+      v.behind > 0 && h('span', { class: 'badge warn', title: 'Commits on the server that are not here' }, `↓ ${v.behind} to pull`),
+      h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn small', type: 'button', onclick: reload }, 'Refresh')),
+    h('h2', {}, v.files.length ? `Changed files (${v.files.length})` : 'No uncommitted changes'),
+    v.files.length ? h('div', { class: 'list git-files', style: 'padding:0' }, v.files.map(f => h('a', {
+      class: 'row', href: f.status === 'new' ? fileHref(pid, f.path) : `#/p/${pid}/diff/${encodeURIComponent(f.path)}`,
+      title: f.status === 'new' ? 'New file: opens the file' : 'Show what changed', onclick: f.status === 'new' ? toChanges : null },
+    h('span', { class: `git-badge ${f.status.replace(/\s/g, '-')}`, title: f.status }, GIT_BADGE[f.status] || '?'),
+    h('div', { class: 'body' }, h('div', { class: 'name' }, f.path.split('/').pop()),
+      h('div', { class: 'info' }, [f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '', f.from ? `from ${f.from}` : '', f.status, f.staged ? 'staged' : ''].filter(Boolean).join(' · ')))))) : null,
+    h('h2', {}, 'Recent commits'),
+    v.commits.length ? h('div', { class: 'list', style: 'padding:0' }, v.commits.map(c => h('a', { class: 'row', href: `#/p/${pid}/commit/${c.hash}` },
+      h('span', { class: 'commit-hash' }, c.short),
+      h('div', { class: 'body' }, h('div', { class: 'name' }, c.subject), h('div', { class: 'info' }, `${c.author} · ${timeAgo(c.at)}`)))))
+      : h('div', { class: 'empty' }, 'No commits yet.'),
+  ].filter(Boolean);
+}
+
+/** A unified diff drawn line by line: additions green, deletions red, file and hunk headers marked. */
+function diffLines(text) {
+  return h('pre', { class: 'code-view diff-view' }, text.replace(/\n$/, '').split('\n').map(l => {
+    const cls = /^(diff --git|index |--- |\+\+\+ |new file|deleted file|similarity|rename (from|to))/.test(l) ? 'meta'
+      : l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : '';
+    return h('span', { class: `ln d-${cls || 'ctx'}` }, l || ' ');
+  }));
+}
+
+function diffView(pid, { file, commit }) {
+  const body = h('div', { class: 'file-body' }, h('div', { class: 'empty' }, 'Loading…'));
+  const name = commit ? `Commit ${commit.slice(0, 8)}` : file.split('/').pop();
+  main.replaceChildren(
+    topBar({ title: name, sub: [projectName(pid), commit ? '' : file].filter(Boolean).join(' › '), pid, back: `#/p/${pid}/changes`, backLabel: 'Changes',
+      right: file ? [h('a', { class: 'btn small', href: fileHref(pid, file), onclick: () => fileReturn.set(pid, { href: `#/p/${pid}/diff/${encodeURIComponent(file)}`, label: 'Diff' }) }, 'Whole file')] : [] }),
+    h('div', { class: 'scroll' }, body));
+  let cancelled = false;
+  (async () => {
+    try {
+      const v = await api(`/api/project/${pid}/git/diff?${commit ? `commit=${commit}` : `path=${encodeURIComponent(file)}`}`);
+      if (cancelled) return;
+      body.replaceChildren(v.text.trim() ? diffLines(v.text) : h('div', { class: 'empty' }, 'No difference to show (the change may already be committed).'),
+        v.truncated ? h('div', { class: 'empty' }, 'The diff is too long; the rest is not shown.') : '');
+    } catch (x) { if (!cancelled && x.status !== 401) body.replaceChildren(h('div', { class: 'empty' }, x.message)); }
+  })();
   return { close() { cancelled = true; } };
 }
 
@@ -804,12 +1151,29 @@ function fileView(pid, path) {
   const body = h('div', { class: 'file-body' }, h('div', { class: 'empty' }, 'Loading…'));
   const infoEl = h('div', { class: 'file-bar' });
   const open = `/open?p=${pid}&path=${encodeURIComponent(path)}`;
+  // Back goes where you came from: the Changes tab or a diff if opened from there, else the chat (the explorer is
+  // opened from a chat), else the project's chats.
+  const ret = fileReturn.get(pid);
+  const back = ret ? { back: ret.href, backLabel: ret.label }
+    : lastChat.get(pid) ? { back: `#/p/${pid}/s/${lastChat.get(pid)}`, backLabel: 'Back to chat' } : { back: `#/p/${pid}`, backLabel: 'Chats' };
+  // "Ask in chat": puts @path into the chat's prompt (like Claude Code's @ mention) and goes there.
+  const ask = () => {
+    const sid = lastChat.get(pid);
+    const key = `kumanda.draft.${pid}.${sid || 'new'}`;
+    const old = store.get(key) || '';
+    store.set(key, `${old}${old && !/\s$/.test(old) ? ' ' : ''}@${path} `);
+    store.set(`kumanda.draftAt.${pid}.${sid || 'new'}`, String(Date.now()));
+    location.hash = sid ? `#/p/${pid}/s/${sid}` : `#/p/${pid}/new`;
+  };
   main.replaceChildren(
-    // Back goes to the chat you came from (the explorer is opened from a chat), else to the project's chats.
-    topBar({ title: name, sub: [projectName(pid), ...path.split('/').slice(0, -1)].filter(Boolean).join(' › '), pid,
-      ...(lastChat.get(pid) ? { back: `#/p/${pid}/s/${lastChat.get(pid)}`, backLabel: 'Back to chat' } : { back: `#/p/${pid}`, backLabel: 'Chats' }),
-      right: [h('a', { class: 'btn small', href: open, target: '_blank', rel: 'noopener', title: 'Open in a separate browser tab (as a product)' }, 'Open'),
-        h('a', { class: 'btn small', href: `${open}&download=1`, target: '_blank', rel: 'noopener', title: 'Download to this device' }, 'Download')] }),
+    topBar({ title: name, sub: [projectName(pid), ...path.split('/').slice(0, -1)].filter(Boolean).join(' › '), pid, ...back,
+      right: [h('button', { class: 'btn small primary', type: 'button', title: `Write @${path} into the prompt of ${lastChat.get(pid) ? 'the chat' : 'a new chat'}`, onclick: ask }, 'Ask in chat'),
+        h('a', { class: 'btn small', href: open, target: '_blank', rel: 'noopener', title: 'Open in a separate browser tab (as a product)' }, 'Open'),
+        menuButton('⋯', [
+          h('a', { class: 'menu-item', role: 'menuitem', href: `${open}&download=1`, target: '_blank', rel: 'noopener', onclick: closeLayer }, h('span', {}, 'Download'), h('span', { class: 'hint' }, 'to this device')),
+          { label: 'Open in VS Code', hint: 'on the computer', onClick: () => openInVSCode(pid, { file: path }) },
+          { label: 'Copy path', onClick: () => copyText(path, 'Path copied') },
+        ], { title: 'More: download, VS Code, copy path' })] }),
     infoEl, h('div', { class: 'scroll' }, body));
   let cancelled = false;
   let wrap = store.get('kumanda.wrap') === '1';
@@ -872,6 +1236,8 @@ function toolSummary(name, g = {}) {
     case 'Task': case 'Agent': return g.description || '';
     case 'Skill': return g.skill || '';
     case 'TodoWrite': return `${g.todos?.length || 0} tasks`;
+    case 'TaskCreate': return g.subject || '';
+    case 'TaskUpdate': return `#${g.taskId || '?'}${g.status ? ` → ${g.status.replace('_', ' ')}` : ''}${g.subject ? ` · ${g.subject}` : ''}`;
     case 'AskUserQuestion': return g.questions?.[0]?.question || '';
     case 'ExitPlanMode': return 'Plan approval';
     default: return first(Object.values(g).find(v => typeof v === 'string') || '');
@@ -889,7 +1255,31 @@ function toolDetails(name, g = {}) {
   }
   if (name === 'Write' && typeof g.content === 'string') return block(g.file_path || 'File', g.content);
   if (name === 'ExitPlanMode' && typeof g.plan === 'string') return [h('div', { class: 'msg claude', html: md(g.plan) })];
+  if (name === 'TodoWrite' && Array.isArray(g.todos)) return [taskList(g.todos.map(t => ({ subject: t.content, status: t.status })))];
   return block('Input', JSON.stringify(g, null, 2));
+}
+
+const TASK_MARK = { completed: '✓', in_progress: '◐', pending: '○' };
+const taskList = list => h('ul', { class: 'task-list' }, list.map(t => h('li', { class: `task ${t.status || 'pending'}` },
+  h('span', { class: 'mark', 'aria-hidden': 'true' }, TASK_MARK[t.status] || '○'), h('span', {}, t.subject || ''))));
+
+/** A chat as Markdown (the "Export" menu item): prompts, replies, tool calls in short, side questions. */
+function chatMarkdown(title, items) {
+  const out = [`# ${title}`, ''];
+  for (const o of items) {
+    if (o.type === 'user') out.push(`## You${o.at ? ` (${new Date(o.at).toLocaleString()})` : ''}`, '', o.text, '');
+    else if (o.type === 'text') out.push('## Claude', '', o.text, '');
+    else if (o.type === 'tool') out.push(`- \`${o.name}\` ${toolSummary(o.name, o.input)}`);
+    else if (o.type === 'btw') out.push(`> **/btw** ${o.question}`, '>', ...(o.answer ? o.answer.split('\n').map(l => `> ${l}`) : []), '');
+    else if (o.type === 'note') out.push(`*${o.text}*`, '');
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+function download(name, text, type = 'text/markdown') {
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+  const a = h('a', { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 async function prepareImage(file) {
@@ -906,14 +1296,46 @@ function chatView(pid, sid) {
   let source = null, marker = '', live = null, activity = '', closed = false, queue = null;
   let streamingEl = null, streamingText = '', drawTimer = 0, hiddenTimer = 0;
   const tools = new Map(), permissions = new Map(), btws = new Map(), attachments = [];
+  const prompts = []; // your prompts in this chat, for ↑/↓ in an empty composer and "Retry"
+  let recall = -1, tick = 0;
   let mode = store.get('kumanda.mode') || 'acceptEdits';
   let model = store.get('kumanda.model') || '';
   let effort = store.get('kumanda.effort') || '';
   let effortConfig = null, historyLastRequest = null, savedLimit = null; // Claude Code's effort settings; { effort, model } of the last request in the transcript
 
-  // An unsent prompt is kept per chat: it is still there after visiting another chat and coming back.
-  const draftKey = () => `kumanda.draft.${pid}.${sid || 'new'}`;
-  const draft = { read: () => store.get(draftKey()) || '', write: m => store.set(draftKey(), m.trim() ? m : '') };
+  // An unsent prompt is kept per chat: it is still there after visiting another chat and coming back. The text is also
+  // saved on the computer (shared by every device: start on the phone, finish on the computer); attached images stay in
+  // this browser (they are too large to send on every keystroke).
+  const draftId = () => `${pid}.${sid || 'new'}`;
+  const draftKey = () => `kumanda.draft.${draftId()}`;
+  let draftTimer = 0;
+  const draft = {
+    read: () => store.get(draftKey()) || '',
+    write: m => {
+      const at = Date.now();
+      store.set(draftKey(), m.trim() ? m : '');
+      store.set(`kumanda.draftAt.${draftId()}`, String(at));
+      clearTimeout(draftTimer);
+      const key = draftId();
+      draftTimer = setTimeout(() => api('/api/drafts', { key, text: m.trim() ? m : '', at }).catch(() => {}), 700);
+    },
+    readImages: () => { try { return JSON.parse(store.get(`kumanda.draftImages.${draftId()}`)) || []; } catch { return []; } },
+    writeImages: list => {
+      const k = `kumanda.draftImages.${draftId()}`;
+      store.set(k, list.length ? JSON.stringify(list.map(e => ({ type: e.type, data: e.data }))) : '');
+      if (list.length && !store.get(k)) toast('The image is too large to keep in the draft; send it before leaving the chat');
+    },
+  };
+  async function syncDraft() { // a newer draft from another device wins (unless you already typed here)
+    try {
+      const v = await api(`/api/drafts?key=${draftId()}`);
+      const localAt = Number(store.get(`kumanda.draftAt.${draftId()}`)) || 0;
+      if (closed || v.at <= localAt || input.value === v.text) return;
+      if (input.value.trim() && input.value !== draft.read()) return;
+      input.value = v.text; store.set(draftKey(), v.text); store.set(`kumanda.draftAt.${draftId()}`, String(v.at)); resize();
+      if (v.text) toast('The draft from your other device was loaded');
+    } catch { /* offline */ }
+  }
 
   const titleEl = h('h1', {}, sid ? 'Chat' : 'New chat');
   const streamEl = h('div', { class: 'chat' });
@@ -933,6 +1355,7 @@ function chatView(pid, sid) {
   const sendButton = h('button', { class: 'btn primary small', type: 'submit', title: 'If Claude is working the prompt is queued; Ctrl+Enter interrupts and sends right away' }, 'Send');
   modeSelect.value = mode; modelSelect.value = model; effortSelect.value = effort;
   input.value = draft.read();
+  for (const e of draft.readImages()) attachments.push({ ...e, url: `data:${e.type};base64,${e.data}` });
 
   // The "Effort: default" option says which effort the Claude Code setting really is for the selected model.
   function defaultEffort() {
@@ -954,6 +1377,8 @@ function chatView(pid, sid) {
     h('div', { class: 'composer-inner' }, attachmentsEl, input,
       h('div', { class: 'composer-bar' },
         h('button', { class: 'btn flat small', type: 'button', title: 'Add image', 'aria-label': 'Add image', onclick: () => fileInput.click() }, '＋'),
+        h('button', { class: 'btn flat small', type: 'button', title: 'Saved prompts', 'aria-label': 'Saved prompts', onclick: e => snippetMenu(e.currentTarget) }, 'Saved'),
+        h('button', { class: 'btn flat small', type: 'button', title: 'Send later (at a time or when the usage limit resets)', 'aria-label': 'Send later', hidden: !sid, onclick: e => scheduleMenu(e.currentTarget) }, 'Later'),
         fileInput, modeSelect, modelSelect, effortSelect, h('span', { class: 'spacer' }), stopButton, nowButton, sendButton)));
 
   // The products this chat made/changed: the "Products" tab next to the title, a panel opening under the top bar (the
@@ -989,14 +1414,82 @@ function chatView(pid, sid) {
   const titleRow = h('div', { class: 'title-tabs' }, titleEl, productButton);
   // Opens the project (and this chat in Claude Code's VS Code panel) on the computer; Kumanda's idle process is closed first.
   const vscodeButton = h('button', { class: 'btn small vscode-button', type: 'button', title: 'Open this project and chat in VS Code on the computer',
-    onclick: async () => {
-      try {
-        const r = await api(`/api/project/${pid}/vscode`, { session: sid || null });
-        toast(sid ? `Opening VS Code on the computer${r.closedRun ? '; the chat continues there' : ''}` : 'Opening the project in VS Code on the computer');
-      } catch (x) { if (x.status !== 401) toast(x.message); }
-    } }, 'VS Code');
-  if (sid) lastChat.set(pid, sid);
-  main.replaceChildren(topBar({ title: titleRow, sub: projectName(pid), back: `#/p/${pid}`, backLabel: 'Chats', pid, right: [vscodeButton] }), productPanel, scrollEl, statusEl, form);
+    onclick: () => openInVSCode(pid, { session: sid || null }) }, 'VS Code');
+  let flags = {};
+  const chatMenu = menuButton('⋯', () => [
+    sid && { label: 'Rename…', onClick: () => renameChat(pid, sid, titleEl.textContent, t => { titleEl.textContent = t; }) },
+    sid && { label: flags.pinned ? 'Unpin' : 'Pin to the top of the list', onClick: () => setFlag('pinned', !flags.pinned) },
+    sid && { label: flags.archived ? 'Move back to the list' : 'Archive', onClick: () => setFlag('archived', !flags.archived) },
+    sid && { label: 'Export as Markdown', hint: 'download', onClick: exportChat },
+    sid && { label: 'Copy link to this chat', onClick: () => copyText(location.href, 'Link copied') },
+    'line',
+    { label: 'Changes (git)', onClick: () => { location.hash = `#/p/${pid}/changes`; } },
+    { label: 'Search this project\'s chats…', onClick: () => openPalette() },
+    sid && live && live.state === 'ready' && { label: 'Close the Claude process', hint: 'frees memory', onClick: () => api(`/api/session/${sid}/close`, {}).catch(x => toast(x.message)) },
+  ], { title: 'Chat options', 'aria-label': 'Chat options', class: 'btn small flat chat-menu' });
+  async function setFlag(k, on) {
+    try { flags = { ...flags, ...(await api(`/api/project/${pid}/session/${sid}/meta`, { [k]: on })) }; toast(k === 'pinned' ? (on ? 'Pinned' : 'Unpinned') : (on ? 'Archived' : 'Back in the list')); }
+    catch (x) { toast(x.message); }
+  }
+  async function exportChat() {
+    try {
+      const v = await api(`/api/project/${pid}/session/${sid}?older`);
+      const name = `${titleEl.textContent.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || 'chat'}.md`;
+      download(name, chatMarkdown(titleEl.textContent, v.items));
+    } catch (x) { if (x.status !== 401) toast(x.message); }
+  }
+  // "↓ New" floating button: shown while you read higher up; counts what arrived meanwhile.
+  let missed = 0;
+  const jumpButton = h('button', { class: 'jump-bottom', type: 'button', hidden: true, title: 'Go to the end', onclick: () => { scrollEl.scrollTop = scrollEl.scrollHeight; } }, 'Latest');
+  scrollEl.addEventListener('scroll', () => { if (atBottom()) { missed = 0; jumpButton.hidden = true; } else jumpButton.hidden = false; jumpButton.textContent = missed ? `${missed} new` : 'Latest'; });
+  // Claude's task list (TaskCreate/TaskUpdate, or TodoWrite in older versions): a bar above the composer.
+  const tasks = new Map(), pendingTasks = new Map();
+  const taskPanel = h('details', { class: 'task-panel', hidden: true });
+  function drawTasks() {
+    const list = [...tasks.values()];
+    const done = list.filter(t => t.status === 'completed').length;
+    const now = list.find(t => t.status === 'in_progress');
+    taskPanel.hidden = !list.length || done === list.length;
+    taskPanel.replaceChildren(h('summary', {}, h('span', { class: 'badge accent' }, `Tasks ${done}/${list.length}`), ' ', h('span', { class: 'muted' }, now ? (now.activeForm || now.subject) : 'waiting')),
+      taskList(list));
+  }
+  function trackTask(o) {
+    const g = o.input || {};
+    if (o.name === 'TodoWrite' && Array.isArray(g.todos)) { tasks.clear(); g.todos.forEach((t, i) => tasks.set(String(i + 1), { subject: t.content, status: t.status, activeForm: t.activeForm })); }
+    else if (o.name === 'TaskCreate') pendingTasks.set(o.id, { subject: g.subject, activeForm: g.activeForm, status: 'pending' });
+    else if (o.name === 'TaskUpdate' && g.taskId) {
+      const t = tasks.get(String(g.taskId));
+      if (g.status === 'deleted') tasks.delete(String(g.taskId));
+      else if (t) Object.assign(t, g.status ? { status: g.status } : {}, g.subject ? { subject: g.subject } : {}, g.activeForm ? { activeForm: g.activeForm } : {});
+    } else return;
+    drawTasks();
+  }
+  function taskCreated(o) {
+    const t = pendingTasks.get(o.id);
+    const id = /Task #(\d+)/.exec(o.text || '')?.[1];
+    if (!t || !id) return;
+    pendingTasks.delete(o.id); tasks.set(id, t); drawTasks();
+  }
+  // Scheduled prompts of this chat: a bar above the composer with "Send now" and "Cancel".
+  const scheduledEl = h('div', { class: 'scheduled', hidden: true });
+  let limitResetsAt = null;
+  async function loadScheduled() {
+    if (!sid) return;
+    try {
+      const v = await api(`/api/schedule?session=${sid}`);
+      if (closed) return;
+      limitResetsAt = v.limitResetsAt;
+      scheduledEl.hidden = !v.items.length;
+      scheduledEl.replaceChildren(...v.items.map(o => h('div', { class: `scheduled-item ${o.state}` },
+        h('span', { class: 'when' }, o.state === 'waiting' ? `Scheduled ${formatMoment(o.at)}${o.afterLimit ? ' (limit reset)' : ''}` : o.state === 'missed' ? 'Missed' : o.state === 'failed' ? 'Failed' : 'Sending'),
+        h('span', { class: 'text', title: o.error || o.text }, o.error ? `${o.text} — ${o.error}` : o.text),
+        h('button', { class: 'btn small flat', type: 'button', onclick: async () => { try { await api('/api/schedule/run', { id: o.id }); } catch (x) { toast(x.message); } loadScheduled(); openStream(); } }, 'Send now'),
+        h('button', { class: 'btn small flat danger', type: 'button', onclick: async () => { try { await api('/api/schedule/cancel', { id: o.id }); } catch (x) { toast(x.message); } loadScheduled(); } }, 'Cancel'))));
+    } catch { /* offline */ }
+  }
+  if (sid) { lastChat.set(pid, sid); markSeen(sid); }
+  main.replaceChildren(topBar({ title: titleRow, sub: projectName(pid), back: `#/p/${pid}`, backLabel: 'Chats', pid, right: [vscodeButton, chatMenu] }), productPanel,
+    h('div', { class: 'scroll-wrap' }, scrollEl, jumpButton), taskPanel, scheduledEl, statusEl, form);
 
   // ── drawing ──
   const atBottom = () => scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 120;
@@ -1006,6 +1499,21 @@ function chatView(pid, sid) {
     const stick = atBottom();
     if (streamingEl && streamingEl.isConnected) streamEl.insertBefore(el, streamingEl); else streamEl.append(el);
     if (stick) scrollEl.scrollTop = scrollEl.scrollHeight;
+    else if (!queue) { missed++; jumpButton.hidden = false; jumpButton.textContent = `${missed} new`; }
+    return el;
+  }
+  /** Copy (and for your prompts "Edit again") under a message: shown on hover, or after a tap on the phone. */
+  function withActions(el, actions) {
+    el.append(h('div', { class: 'msg-actions' }, actions.map(([label, f]) => h('button', { class: 'btn small flat', type: 'button', onclick: e => { e.stopPropagation(); f(); } }, label))));
+    el.addEventListener('click', e => { if (TOUCH && !e.target.closest?.('a, button, pre')) el.classList.toggle('show-actions'); });
+    return el;
+  }
+  function codeCopyButtons(el) {
+    for (const pre of el.querySelectorAll('pre')) {
+      const text = pre.textContent;
+      pre.classList.add('has-copy');
+      pre.append(h('button', { class: 'copy-code', type: 'button', title: 'Copy the code', onclick: () => copyText(text, 'Code copied') }, 'Copy'));
+    }
     return el;
   }
 
@@ -1033,6 +1541,7 @@ function chatView(pid, sid) {
     a.summary.textContent = `${a.members.length} steps: ${[...a.counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(' · ')}`;
     tools.get(o.id).group = a;
     groupStatus(a);
+    trackTask(o);
     if (atBottom()) scrollEl.scrollTop = scrollEl.scrollHeight;
   }
   function groupStatus(a) {
@@ -1047,6 +1556,7 @@ function chatView(pid, sid) {
     a.state.className = `tool-status ${o.isError ? 'error' : 'done'}`;
     a.state.textContent = o.isError ? '✕' : '✓';
     if (o.text) a.body.append(h('div', { class: 'label' }, o.isError ? 'Error' : 'Result'), h('pre', { class: `block${o.isError ? ' error' : ''}` }, o.text));
+    if (!o.isError) taskCreated(o);
     if (a.group) groupStatus(a.group);
   }
   function settlePendingTools() {
@@ -1140,27 +1650,104 @@ function chatView(pid, sid) {
     switch (o.type) {
       case 'btw': drawBtw(o); break;
       case 'user':
-        add(h('div', { class: 'msg user' }, o.text, o.images ? h('div', { class: 'small muted' }, `${o.images} image${o.images > 1 ? 's' : ''} attached`) : null));
+        prompts.push(o.text);
+        add(withActions(h('div', { class: 'msg user' }, o.text, o.images ? h('div', { class: 'small muted' }, `${o.images} image${o.images > 1 ? 's' : ''} attached`) : null),
+          [['Copy', () => copyText(o.text)], ['Edit again', () => { input.value = o.text; draft.write(o.text); resize(); input.focus(); }]]));
         scrollEl.scrollTop = scrollEl.scrollHeight;
+        if (!queue) loadScheduled(); // a scheduled prompt may have just gone out
         break;
       case 'text':
         if (streamingEl) { streamingEl.remove(); streamingEl = null; streamingText = ''; }
-        add(h('div', { class: 'msg claude', html: md(o.text) }));
+        add(withActions(codeCopyButtons(h('div', { class: 'msg claude', html: md(o.text) })), [['Copy', () => copyText(o.text)]]));
+        // Claude Code reports a used-up limit as a plain reply ("You've hit your 5-hour limit · resets 4:20am").
+        if (o.text.length < 400 && /hit your .*limit|out of (usage|extra usage)|usage limit/i.test(o.text) && sid) {
+          add(h('div', { class: 'buttons limit-actions' }, h('button', { class: 'btn small primary', type: 'button',
+            onclick: () => schedule({ afterLimit: true, hint: o.text, text: input.value.trim() || 'The usage limit has reset. Continue where you left off.' }) }, 'Continue when the limit resets')));
+        }
         break;
       case 'tool': drawTool(o); break;
       case 'tool-result': toolResult(o); break;
       case 'permission': drawPermission(o); break;
       case 'permission-reply': finishPermission(o); break;
       case 'note': add(h('div', { class: 'msg note' }, o.text)); break;
-      case 'error': add(h('div', { class: 'msg error' }, o.text)); break;
+      case 'error': add(errorCard(o.text)); break;
       case 'result':
         settlePendingTools();
-        if (o.error) add(h('div', { class: 'msg error' }, o.error));
+        if (o.error) add(errorCard(o.error));
         else if (!o.interrupted) add(h('div', { class: 'msg result', title: o.at ? new Date(o.at).toLocaleString() : '' },
           [o.durationMs ? `Worked for ${formatDuration(o.durationMs)}` : 'Done', formatMoment(o.at) && `finished ${formatMoment(o.at)}`].filter(Boolean).join(' · ')));
         break;
       default: break;
     }
+  }
+
+  // A failed turn: "Retry" sends your last prompt again; a usage limit offers to continue by itself when it resets.
+  function errorCard(text) {
+    const limit = /limit|usage|rate|quota|credits/i.test(text);
+    return h('div', { class: 'msg error' }, text,
+      h('div', { class: 'buttons', style: 'margin-top:8px' },
+        prompts.length > 0 && h('button', { class: 'btn small', type: 'button', onclick: () => { input.value = prompts.at(-1); send(); } }, 'Retry'),
+        limit && sid && h('button', { class: 'btn small primary', type: 'button', onclick: () => schedule({ afterLimit: true, hint: text, text: input.value.trim() || 'The usage limit has reset. Continue where you left off.' }) }, 'Continue when the limit resets')));
+  }
+
+  /** "resets 4:20am" / "resets at 16:20" in a limit message → the next such moment (ms), or null. */
+  function resetFromText(t) {
+    const m = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(t || '');
+    if (!m) return null;
+    let hour = Number(m[1]) % (m[3] ? 12 : 24);
+    if (m[3]?.toLowerCase() === 'pm') hour += 12;
+    const d = new Date(); d.setHours(hour, Number(m[2] || 0), 0, 0);
+    if (d.getTime() < Date.now() - 60e3) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  /** Schedules a prompt into this chat: at a time, or when the usage limit resets (known from Claude's replies). */
+  async function schedule({ at, afterLimit, text, hint }) {
+    if (!sid) { toast('Start the chat first'); return; }
+    if (!text) { toast('Write the prompt to send later first'); return; }
+    const body = { project: pid, session: sid, text, mode, model, effort: effortSelect.value };
+    try {
+      let r;
+      try { r = await api('/api/schedule', afterLimit ? { ...body, afterLimit: true } : { ...body, at }); }
+      catch (x) {
+        const guess = afterLimit && x.status === 409 ? resetFromText(hint) : null; // the reset time only written in the message
+        if (!guess) throw x;
+        r = await api('/api/schedule', { ...body, at: guess + 60e3 });
+      }
+      if (input.value.trim() === text) { input.value = ''; draft.write(''); resize(); }
+      toast(`Scheduled for ${formatMoment(r.at)}`);
+      loadScheduled();
+    } catch (x) { if (x.status !== 401) toast(x.message); }
+  }
+  function scheduleMenu(anchor) {
+    const text = input.value.trim();
+    const reset = limitResetsAt;
+    const at = mins => Date.now() + mins * 60e3;
+    const when = h('input', { type: 'datetime-local', 'aria-label': 'Send at', value: new Date(Date.now() + 3600e3 - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 16) });
+    openMenu(anchor, [
+      { label: 'When the usage limit resets', hint: reset ? formatMoment(reset) : 'time not known yet', disabled: !reset, onClick: () => schedule({ afterLimit: true, text: text || 'The usage limit has reset. Continue where you left off.' }) },
+      { label: 'In 30 minutes', onClick: () => schedule({ at: at(30), text }) },
+      { label: 'In 1 hour', onClick: () => schedule({ at: at(60), text }) },
+      { label: 'In 3 hours', onClick: () => schedule({ at: at(180), text }) },
+      h('form', { class: 'menu-form', onsubmit: e => { e.preventDefault(); const t = new Date(when.value).getTime(); closeLayer(); schedule({ at: t, text }); } },
+        when, h('button', { class: 'btn small primary', type: 'submit' }, 'Schedule')),
+    ], text ? `Send "${text.length > 40 ? `${text.slice(0, 40)}…` : text}" later` : 'Send later (write the prompt first; "When the limit resets" sends "Continue")');
+  }
+  async function snippetMenu(anchor) {
+    let list = [];
+    try { list = (await api('/api/snippets')).snippets; } catch { /* offline */ }
+    const insert = t => {
+      const s = input.selectionStart ?? input.value.length, e = input.selectionEnd ?? input.value.length;
+      input.value = `${input.value.slice(0, s)}${t}${input.value.slice(e)}`;
+      draft.write(input.value); resize(); if (!TOUCH) input.focus();
+    };
+    openMenu(anchor, [
+      ...list.map(t => ({ label: t.length > 70 ? `${t.slice(0, 70)}…` : t, onClick: () => insert(t) })),
+      'line',
+      input.value.trim() && { label: 'Save this prompt', hint: 'for every device', onClick: async () => {
+        try { await api('/api/snippets', { snippets: [...list, input.value.trim()] }); toast('Saved'); } catch (x) { toast(x.message); }
+      } },
+      { label: 'Edit saved prompts…', onClick: () => { location.hash = '#/settings'; } },
+    ], 'Saved prompts');
   }
 
   function delta(o) {
@@ -1185,19 +1772,24 @@ function chatView(pid, sid) {
     const working = d === 'running' || d === 'waiting';
     stopButton.hidden = !working;
     nowButton.hidden = !working;
-    const left = d === 'running' ? `${activity || 'Working'}…` : d === 'waiting' ? 'Waiting for your answer' : d === 'ready' ? 'Ready' : '';
+    const elapsed = live?.turnStart && working ? ` ${formatDuration(Date.now() - live.turnStart)}` : '';
+    const left = d === 'running' ? `${activity || 'Working'}…${elapsed}` : d === 'waiting' ? 'Waiting for your answer' : d === 'ready' ? 'Ready' : '';
+    clearTimeout(tick);
+    if (working && !closed) tick = setTimeout(drawStatus, 1000); // the elapsed time counts up
     // Usage arrives after a request; with no open process the last value saved by the server is shown. A window whose
     // reset time has passed is stale and not shown.
     const l = live?.limit || savedLimit;
     const valid = resetsAt => !resetsAt || resetsAt * 1000 > Date.now();
     // Effort: what the last API request really used (Claude Code writes it to the transcript); the select shows the next prompt's.
     const last = live?.lastRequest || historyLastRequest;
+    const context = live?.context || last?.context;
     const right = [(live?.model || last?.model)?.replace(/^claude-/, ''), last?.effort ? `effort ${EFFORT_SHORT[last.effort] || last.effort}` : null,
+      context ? `context ${context >= 1000 ? `${Math.round(context / 1000)}k` : context}` : null,
       l?.fiveHour != null && valid(l.fiveHourResetsAt) ? `5h ${Math.round(l.fiveHour * 100)}%` : null,
       l?.sevenDay != null && valid(l.sevenDayResetsAt) ? `week ${Math.round(l.sevenDay * 100)}%` : null].filter(Boolean).join(' · ');
     const resets = [l?.fiveHourResetsAt && `5-hour window ${formatMoment(l.fiveHourResetsAt * 1000)}`, l?.sevenDayResetsAt && `weekly ${formatMoment(l.sevenDayResetsAt * 1000)}`].filter(Boolean).join(', ');
     statusEl.replaceChildren(d && d !== 'closed' ? h('span', { class: `dot ${d}` }) : '', h('span', {}, left), h('span', { class: 'spacer' }),
-      h('span', { title: `Model · effort of the last request · 5-hour and weekly usage${resets ? `. Resets: ${resets}` : ''}${l?.at ? ` (last measured ${formatMoment(l.at)})` : ''}` }, right));
+      h('span', { title: `Model · effort of the last request · tokens in the context window · 5-hour and weekly usage${resets ? `. Resets: ${resets}` : ''}${l?.at ? ` (last measured ${formatMoment(l.at)})` : ''}` }, right));
     labelEffort();
     if (live?.mode && d !== 'closed' && modeSelect.value !== live.mode) modeSelect.value = live.mode;
     // Show it if it was changed from another device (only with an open process; when closed the next prompt opens with this device's choice).
@@ -1219,7 +1811,7 @@ function chatView(pid, sid) {
       case 'limit': if (live) { live.limit = o.limit; drawStatus(); } break;
       default:
         if ((o.type === 'result' || o.type === 'permission') && document.hidden) document.title = '● Kumanda';
-        if (o.type === 'result') rescanProducts();
+        if (o.type === 'result') { rescanProducts(); if (!document.hidden) markSeen(sid); refreshProjects(); }
         drawItem(o);
     }
   }
@@ -1243,6 +1835,7 @@ function chatView(pid, sid) {
       const v = await api(`/api/project/${pid}/session/${sid}${older === true ? '?older' : ''}`);
       if (closed) return;
       tools.clear(); permissions.clear(); btws.clear(); streamingEl = null; toolGroup = null;
+      prompts.length = 0; tasks.clear(); pendingTasks.clear(); missed = 0; jumpButton.hidden = true;
       streamingText = '';
       const fromBottom = scrollEl.scrollHeight - scrollEl.scrollTop; // the reading position must not jump when older ones load
       streamEl.replaceChildren();
@@ -1250,6 +1843,7 @@ function chatView(pid, sid) {
         older === true ? 'The whole chat is too long; the oldest part is not shown' : 'Load older messages'));
       for (const o of v.items) drawItem(o);
       settlePendingTools();
+      drawTasks();
       live = v.live;
       historyLastRequest = v.lastRequest || null;
       savedLimit = v.limit || null;
@@ -1288,7 +1882,8 @@ function chatView(pid, sid) {
 
   // ── composer ──
   function resize() { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, innerHeight * 0.4)}px`; }
-  function drawAttachments() {
+  function drawAttachments() { // also saves them with the draft, so a pasted screenshot survives leaving the chat
+    draft.writeImages(attachments);
     attachmentsEl.replaceChildren(...attachments.map((e, i) => h('div', { class: 'attachment' }, h('img', { src: e.url, alt: 'Attached image' }),
       h('button', { type: 'button', 'aria-label': 'Remove image', onclick: () => { attachments.splice(i, 1); drawAttachments(); } }, '×'))));
   }
@@ -1299,8 +1894,18 @@ function chatView(pid, sid) {
     }
     drawAttachments();
   }
-  input.addEventListener('input', () => { resize(); draft.write(input.value); });
+  input.addEventListener('input', () => { recall = -1; resize(); draft.write(input.value); });
   input.addEventListener('keydown', e => {
+    // ↑ / ↓ in an empty (or recalled) composer: your earlier prompts in this chat, like in a terminal.
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && prompts.length
+      && (!input.value || (recall >= 0 && input.value === prompts[prompts.length - 1 - recall]))) {
+      e.preventDefault();
+      recall = Math.max(-1, Math.min(prompts.length - 1, recall + (e.key === 'ArrowUp' ? 1 : -1)));
+      input.value = recall >= 0 ? prompts[prompts.length - 1 - recall] : '';
+      resize();
+      return;
+    }
+    if (e.key === 'Escape' && (live?.state === 'running' || live?.state === 'waiting')) { e.preventDefault(); stopButton.click(); toast('Stopping…'); return; }
     if (e.key !== 'Enter' || e.isComposing) return;
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); send({ now: true }); } // on touch devices too (hardware keyboard)
     else if (!e.shiftKey && !TOUCH) { e.preventDefault(); send(); }
@@ -1343,16 +1948,37 @@ function chatView(pid, sid) {
   if (sid) {
     loadHistory();
     loadProducts(false);
-    api(`/api/project/${pid}`).then(v => { const s = v.sessions.find(x => x.id === sid); if (s && !closed) titleEl.textContent = s.title; }).catch(() => {});
+    api(`/api/project/${pid}`).then(v => { const s = v.sessions.find(x => x.id === sid); if (s && !closed) { titleEl.textContent = s.title; flags = { pinned: s.pinned, archived: s.archived }; } }).catch(() => {});
+    loadScheduled();
   } else {
     streamEl.append(h('div', { class: 'empty' }, `A new Claude Code chat in the ${projectName(pid) || 'project'} folder. What should be done?`));
     if (!TOUCH) input.focus();
   }
   api(`/api/project/${pid}/effort`).then(v => { if (!closed) { effortConfig = v; labelEffort(); } }).catch(() => {});
   if (input.value) setTimeout(resize, 0); // a restored draft: the composer grows to fit it
+  if (attachments.length) drawAttachments();
+  syncDraft();
   drawStatus();
 
-  return { close() { closed = true; closeStream(); clearTimeout(hiddenTimer); clearTimeout(drawTimer); clearTimeout(productTimer); document.removeEventListener('visibilitychange', visibility); } };
+  return { close() { closed = true; closeStream(); clearTimeout(hiddenTimer); clearTimeout(drawTimer); clearTimeout(productTimer); clearTimeout(tick); document.removeEventListener('visibilitychange', visibility); } };
+}
+
+// ───────── share (from another app) ─────────
+function shareView() {
+  let text = '';
+  try { text = sessionStorage.getItem('kumanda.shared') || ''; } catch { /* none */ }
+  const box = h('textarea', { rows: 5, value: text, 'aria-label': 'Shared text' });
+  const list = h('div', { class: 'list', style: 'padding:0' });
+  const draw = () => list.replaceChildren(...projects.map(p => h('a', { class: 'row', href: `#/p/${p.id}/new`, onclick: () => {
+    store.set(`kumanda.draft.${p.id}.new`, box.value);
+    store.set(`kumanda.draftAt.${p.id}.new`, String(Date.now()));
+    try { sessionStorage.removeItem('kumanda.shared'); } catch { /* none */ }
+  } }, h('div', { class: 'body' }, h('div', { class: 'name' }, p.name), h('div', { class: 'info' }, p.lastActivity ? timeAgo(p.lastActivity) : 'no chats yet')))));
+  main.replaceChildren(topBar({ title: 'Share to Claude', sub: 'Pick the project: a new chat opens with this text' }),
+    h('div', { class: 'scroll' }, h('div', { class: 'inner' }, box, h('h2', { style: 'margin-top:16px' }, 'Project'), list)));
+  draw();
+  const timer = setInterval(() => { if (projects.length && !list.children.length) draw(); }, 500);
+  return { close() { clearInterval(timer); } };
 }
 
 // ───────── settings ─────────
@@ -1378,8 +2004,9 @@ function settingsPage() {
   let cancelled = false;
 
   async function draw() {
-    let devices = [], hiddenProjects = [], subscribed = false;
+    let devices = [], hiddenProjects = [], subscribed = false, snippets = [], scheduled = [];
     try {
+      [snippets, scheduled] = await Promise.all([api('/api/snippets').then(v => v.snippets), api('/api/schedule').then(v => v.items)]);
       devices = (await api('/api/devices')).devices;
       hiddenProjects = (await api('/api/projects?hidden')).projects.filter(p => p.hidden);
       const reg = await navigator.serviceWorker?.getRegistration();
@@ -1391,7 +2018,32 @@ function settingsPage() {
     const fresh = h('input', { type: 'password', autocomplete: 'new-password', placeholder: `New password (at least ${status.minPassword} characters)` });
     const folder = h('input', { type: 'text', placeholder: 'C:\\Users\\…\\Project folder', autocapitalize: 'off', spellcheck: false });
 
+    const choice = (label, key, options, fallback) => h('label', { class: 'setting-choice' }, label,
+      h('select', { 'aria-label': label, onchange: e => { store.set(key, e.target.value); applyAppearance(); } },
+        Object.entries(options).map(([v, t]) => h('option', { value: v, selected: (store.get(key) || fallback) === v }, t))));
+    const snippetBox = h('textarea', { rows: 8, value: snippets.join('\n\n'), 'aria-label': 'Saved prompts', placeholder: 'One prompt per paragraph (separate them with an empty line)' });
+
     body.replaceChildren(
+      h('h2', {}, 'Appearance (this device)'),
+      h('div', { class: 'card setting-choices' },
+        choice('Theme', 'kumanda.theme', { auto: 'Like the system', light: 'Light', dark: 'Dark' }, 'auto'),
+        choice('Text size', 'kumanda.textSize', { s: 'Small', m: 'Normal', l: 'Large', xl: 'Larger' }, 'm'),
+        h('button', { class: 'btn small', type: 'button', onclick: showShortcuts }, 'Keyboard shortcuts')),
+
+      h('h2', {}, 'Saved prompts'),
+      h('form', { class: 'card', style: 'display:grid;gap:8px', onsubmit: async e => {
+        e.preventDefault();
+        try { await api('/api/snippets', { snippets: snippetBox.value.split(/\n\s*\n/) }); toast('Saved prompts updated'); draw(); } catch (x) { toast(x.message); }
+      } }, h('p', { class: 'small muted', style: 'margin:0' }, 'The Saved button in a chat inserts these. One per paragraph; shared by every device.'), snippetBox,
+      h('div', {}, h('button', { class: 'btn', type: 'submit' }, 'Save'))),
+
+      h('h2', {}, 'Scheduled prompts'),
+      h('div', { class: 'card' }, scheduled.length ? scheduled.map(o => h('div', { class: 'setting-row' },
+        h('div', { class: 'body' }, h('div', {}, h('a', { href: `#/p/${o.project}/s/${o.session}` }, o.text.length > 80 ? `${o.text.slice(0, 80)}…` : o.text)),
+          h('div', { class: 'small muted' }, `${projectName(o.project) || 'Project'} · ${o.state === 'waiting' ? formatMoment(o.at) : o.state}${o.afterLimit ? ' · when the limit resets' : ''}${o.error ? ` · ${o.error}` : ''}`)),
+        h('button', { class: 'btn small danger', onclick: async () => { try { await api('/api/schedule/cancel', { id: o.id }); draw(); } catch (x) { toast(x.message); } } }, 'Cancel')))
+        : h('p', { class: 'small muted', style: 'margin:0' }, 'None. In a chat, the Later button sends a prompt later: at a time or when the usage limit resets.')),
+
       h('h2', {}, 'Notifications'),
       h('div', { class: 'card' },
         h('p', { style: 'margin-top:0' }, 'When Claude finishes or waits for permission while the page is not open, this device gets a notification.'),
@@ -1442,13 +2094,23 @@ function settingsPage() {
 async function start() {
   try { status = await (await fetch('/api/status')).json(); }
   catch { app.replaceChildren(h('div', { class: 'center muted' }, 'Cannot reach Kumanda. Is the computer on and connected?')); setTimeout(start, 4000); return; }
+  // Shared from another app (Android share sheet → "Kumanda"): the text waits on the "Share" page for a project.
+  const shared = new URLSearchParams(location.search);
+  if (shared.has('text') || shared.has('url') || shared.has('title')) {
+    try { sessionStorage.setItem('kumanda.shared', [shared.get('title'), shared.get('text'), shared.get('url')].filter(Boolean).join('\n')); } catch { /* private mode */ }
+    history.replaceState(null, '', '/#/share');
+  }
   if (!status.setUp || !status.loggedIn) return showLogin();
   shell();
   addEventListener('hashchange', route);
   // VS Code shortcuts: Ctrl+B project list, Ctrl+Shift+E files.
   document.addEventListener('keydown', e => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || e.target?.isContentEditable;
+    if (e.altKey && !e.ctrlKey && !e.metaKey && String(e.key).toLowerCase() === 'n' && currentPid()) { e.preventDefault(); location.hash = `#/p/${currentPid()}/new`; return; }
+    if (e.key === '?' && !typing && !openLayer) { e.preventDefault(); showShortcuts(); return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const key = String(e.key).toLowerCase();
+    if (key === 'k' && !e.shiftKey) { e.preventDefault(); if (openLayer) closeLayer(); else openPalette(); return; }
     if (key === 'b' && !e.shiftKey) { e.preventDefault(); toggleSide(); }
     else if (key === 'e' && e.shiftKey && explorerPid) { e.preventDefault(); toggleExplorer(); }
   });
