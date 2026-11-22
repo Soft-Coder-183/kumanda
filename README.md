@@ -1,10 +1,12 @@
 # Kumanda
 
-Use the **Claude Code** on your computer from your phone or another computer; open or download the **HTML, APK, EXE, ZIP,
+Use the **Claude Code** on your computer from your phone or another computer: start or continue a chat in any project, approve
+permissions, and open or download the **HTML, APK, EXE, ZIP,
 video and document** outputs of all your projects from one place.
 
 As long as your computer is on, you pick a project from any device, write to Claude, read the reply live and grant a permission
 with one tap. Claude runs on your computer, in your files, with your Claude Code settings; Kumanda is only the remote control.
+How it compares with VS Code, Remote Control and Claude Code on the web: [Why Kumanda?](#why-kumanda-and-not-vs-code-the-claude-app-or-claude-code-on-the-web)
 
 <p align="center">
   <img src="docs/phone-projects.png" width="190" alt="The project list">
@@ -180,11 +182,36 @@ npm test          # end-to-end tests with a fake Claude (spends no quota)
 No external dependencies. README screenshots: `npm i --no-save playwright-core`, then `node tools/screenshots.mjs` (uses the
 installed Chrome). Release notes are in the [`notes/`](notes) folder.
 
-## How is it different from Claude Code Remote Control?
+## Why Kumanda, and not VS Code, the Claude app or Claude Code on the web?
 
-Claude Code's built-in `claude --remote-control` also lets you continue a session from claude.ai/code or the Claude app. What
-Kumanda adds: you do not need to start the session on the computer first (you pick the project on the phone and open a new chat),
-it lists and opens your projects' products, and it works over your own Tailscale network instead of Anthropic's servers.
+Kumanda is for one situation: **your projects and your tools are on your computer, and you are not at it.** The official
+options are good, but each covers only part of that:
+
+| | Where Claude runs | From the phone | What it does not cover |
+|---|---|---|---|
+| **Claude Code in the terminal, VS Code or the desktop app** | Your computer | No | You have to sit at the computer. |
+| **Claude Code Remote Control** (`claude --remote-control`, Claude app) | Your computer | Yes | A `claude` session must already be running on the computer; you cannot start a new chat in another project from the phone, and closing that terminal ends it. Your products are not shown. |
+| **Claude Code on the web / cloud** (claude.ai/code) | Anthropic's cloud sandbox | Yes | Works on a GitHub repository in a Linux sandbox, not on your computer: your local SDKs, Android/Windows builds, files outside git and local settings are not there. |
+| **Kumanda** | Your computer | Yes | Needs the computer on and a one-time setup (Node.js, Tailscale); an unofficial project. |
+
+What only Kumanda does:
+
+1. **Start anything from the phone.** Pick any project (or create one), open a new chat or continue any old one, including the
+   ones you started in the terminal. Nothing has to be left running on the computer except Kumanda itself.
+2. **Your real machine.** Claude works in your folders with your installed tools, SDKs, keys and Claude Code settings, so it can
+   build the APK or the EXE you actually use.
+3. **The results, not just the chat.** Every project's outputs (web pages, APKs, EXEs, ZIPs, videos, documents) in one place,
+   grouped by the chat that made them: install the APK on the phone, open the web page, download the EXE.
+4. **All projects at once.** The "Now" list shows every chat that is working, waiting for a permission or finished, across all
+   projects, with notifications.
+5. **Made for working away from the desk.** Permission cards, send later (for example when the usage limit resets), saved
+   prompts, drafts that follow you between devices, the git changes and the project files to review what Claude did.
+6. **Your own network.** The phone reaches the computer over your Tailscale network; the remote control traffic does not pass
+   through a third-party relay (Claude itself of course still talks to Anthropic, as in the terminal).
+
+When **not** to use it: if you are at the computer, the terminal, VS Code or the desktop app is the better tool; if you only
+want to check on a session you just started there, Remote Control is simpler; if the code lives on GitHub and needs nothing from
+your computer, Claude Code on the web needs no computer at all.
 
 ## License
 
