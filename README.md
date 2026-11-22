@@ -206,10 +206,13 @@ What only Kumanda does:
    projects, with notifications.
 5. **Made for working away from the desk.** Permission cards, send later (for example when the usage limit resets), saved
    prompts, drafts that follow you between devices, the git changes and the project files to review what Claude did.
-6. **Your own network.** The phone reaches the computer over your Tailscale network; the remote control traffic does not pass
+6. **Many projects in one window, at the desk too.** When you prompt several small projects in turn, they are all one click
+   away in the same browser tab instead of one VS Code window each.
+7. **Your own network.** The phone reaches the computer over your Tailscale network; the remote control traffic does not pass
    through a third-party relay (Claude itself of course still talks to Anthropic, as in the terminal).
 
-When **not** to use it: if you are at the computer, the terminal, VS Code or the desktop app is the better tool; if you only
+When **not** to use it: for deep work on one project at the computer (editing code yourself next to Claude), VS Code or the
+terminal is the better tool; if you only
 want to check on a session you just started there, Remote Control is simpler; if the code lives on GitHub and needs nothing from
 your computer, Claude Code on the web needs no computer at all.
 
