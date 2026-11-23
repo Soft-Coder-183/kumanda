@@ -70,6 +70,10 @@ How it compares with VS Code, Remote Control and Claude Code on the web: [Why Ku
   commits (read only).
 - **Send later.** **Later** in the composer sends the prompt at a time you pick, or when the usage limit resets; a "You've hit
   your limit" reply gets a **Continue when the limit resets** button.
+- **Skills and commands with `/`.** Typing `/` at the start of a prompt lists the project's skills, your own commands and
+  Claude Code's built-in commands with their descriptions; ↑/↓ and Enter or Tab complete the name.
+- **Claude artifacts.** When Claude publishes a page to claude.ai (Artifact tool), the chat shows a card with its link, and the
+  project's **Products** tab lists every artifact of the project.
 - **Saved prompts.** **Saved** inserts prompts you use often ("Continue.", "Run the tests…"); edit the list in Settings.
 - **Drafts follow you.** An unsent prompt is saved on the computer too: start it on the phone, finish it on the computer. Pasted
   screenshots stay in the draft on that device.

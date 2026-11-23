@@ -50,6 +50,8 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | `src/schedule.mjs` | Scheduled prompts (`scheduled.json`), the timer that sends them, the limit reset time |
 | `src/git.mjs` | Read-only git: status, log, file/commit diff (`execFile`, argument array) |
 | `src/search.mjs` | Chat search: titles in every project, message text in one project |
+| `src/commands.mjs` | The "/" list: Claude Code's `init` lists saved per project (`commands.json`) + skill/command files read from disk |
+| `src/artifacts.mjs` | Claude artifacts: Artifact publish calls and their claude.ai links read from the transcripts |
 | `src/btw-no-tools.mjs` | The PreToolUse hook of `/btw` (exit code 2 = every tool call denied) |
 | `src/auth.mjs` | Password, `control`/`product` device sessions, login limit, tickets |
 | `src/push.mjs` | VAPID key, subscriptions, payload-less Web Push |
@@ -65,7 +67,7 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 
 | Part | What it does |
 |---|---|
-| Projects | Folders under `config.roots` + folders Claude Code knows; sorted by last activity, live status dot |
+| Projects | Folders under `config.roots` + folders Claude Code knows; sorted by last activity (time of the last message inside the transcripts, see 2.3.0 notes), live status dot |
 | Chat | New chat or continue an existing session (including ones opened in the terminal); streaming reply, tool rows, images; Ctrl+Enter "send now"; prompt draft per chat in `localStorage['kumanda.draft.<pid>.<session or new>']` |
 | Permissions | Tool permission card (Allow / Always allow / Deny), Claude's questions (`AskUserQuestion`), plan approval; mode, model and effort selects |
 | Products | Per project and all together; web/video/PDF open, APK/EXE/ZIP download; device fit label; hiding |
@@ -85,6 +87,23 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | Chat comforts (2.2.0) | Copy/Edit again under messages, code copy, ↑/↓ prompt recall, Esc stops, "Latest" jump button, task panel (TaskCreate/TaskUpdate, TodoWrite), context tokens and working time in the status bar, export Markdown, error "Retry" |
 | Share (2.2.0) | Manifest `share_target` GET to `/` → `?text=` is moved to `sessionStorage` and `#/share` asks for the project |
 | Appearance (2.2.0) | `html[data-theme]` (light/dark, else the system) and `html[data-size]`, per device in Settings |
+| "/" menu (2.3.0) | `GET /api/project/:pid/commands` → `{commands: [{name, description, kind}], fromClaude}`; composer menu while the text up to the caret is `/word` |
+| Artifacts (2.3.0) | `GET /api/project/:pid/artifacts[?session=]`; card in the chat on the publish result, chat Products panel and project Products tab |
+
+### 2.3.0 notes
+- **"/" list:** Claude Code's `init` message carries `slash_commands` (names only), `terminal_slash_commands` (work only in the
+  terminal, e.g. `doctor`) and `skills`. `rememberCommands` saves them per project on every init; descriptions come from
+  `SKILL.md` / `commands/**/*.md` front matter (`~/.claude/skills`, the project's `.claude/skills` and `.claude/commands`,
+  a subfolder gives `dir:name`, `user-invocable: false` is hidden) and a small built-in table. Terminal-only and a HIDDEN set
+  (login, exit, resume…) are left out; `btw` is added (Kumanda's own). Before the project's first chat the newest other project's
+  list is used. Checked with real haiku (2026-11-23): a skill sent as "/name" runs, `/context` answers as assistant text.
+- **Artifacts:** the Artifact tool (publish, private by default) returns a `claude.ai/code/artifact/<id>` link in its result.
+  `src/artifacts.mjs` only reads transcript lines containing "Artifact" or "claude.ai/" (cached by mtime+size). The link format
+  is taken from the tool description; **not tried with a real publish** (it is outward-facing), and no transcript of the owner
+  had one yet. If it does not show up, compare a real tool_result with `ARTIFACT_LINK` (server and `web/app.js`).
+- **Project order:** Claude Code rewrote old transcripts (9 files got today's mtime on 2026-11-23 with old contents), so projects
+  with no real chat (only /clear, /model) jumped to the top. `lastUsed()` in `src/projects.mjs` takes the newest `"timestamp"`
+  in the last 64 KB of the file (else the first 64 KB), never later than the mtime; chats in a project are sorted the same way.
 
 ### 2.0.0: the English rename
 - Every identifier, route, event type, field, CSS class, file and folder name moved to English (the Turkish → English mapping is
@@ -364,6 +383,8 @@ Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every
   open at the end (2026-11-22, when its CSS was missing). `tools/screenshots.mjs` checks the mouse wheel now.
 
 ## Open work
+
+- **Artifact links not tried with a real publish** (see "2.3.0 notes").
 
 - **VS Code button not tried with the real VS Code** (see "VS Code button"); it opens the extension panel, not a terminal. If the
   owner wants the terminal: a `.vscode/tasks.json` with `runOn: folderOpen` running `claude --resume <id>` would do it, but needs
