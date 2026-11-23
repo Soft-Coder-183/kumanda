@@ -68,6 +68,8 @@ const replies = {
   '/api/snippets': { snippets: ['Continue.', 'Run the tests'] },
   '/api/schedule': { items: [{ id: 's1', project: PID, session: SID, text: 'later prompt', at: now + 3600e3, state: 'waiting' }], limitResetsAt: now + 7200e3 },
   '/api/drafts': { text: '', at: 0 },
+  [`/api/project/${PID}/commands`]: { fromClaude: true, commands: [{ name: 'handoff', kind: 'skill', description: 'Keeps the handoff docs' }, { name: 'compact', kind: 'built-in', description: 'Compact' }] },
+  [`/api/project/${PID}/artifacts`]: { artifacts: [{ url: 'https://claude.ai/code/artifact/abc', title: 'Weekly report', file: 'weekly-report.html', at: now, session: SID }] },
   [`/api/project/${PID}/git`]: { repo: true, branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0,
     files: [{ path: 'src/a.js', status: 'modified', staged: false }, { path: 'n.txt', status: 'new', staged: false }],
     commits: [{ hash: 'abcdef1234567890', short: 'abcdef1', author: 'E', at: now, subject: 'First commit' }] },
@@ -226,7 +228,7 @@ test('UI: every view and event type draws without errors', async () => {
   // The "Products" tab next to the chat title opens only this chat's products.
   const panel = all.slice(from).find(e => e.className === 'chat-products');
   const tab = all.slice(from).find(e => e.className.includes('products-tab'));
-  assert.equal(tab.textContent, `Products (${products.length})`, 'the product count on the tab');
+  assert.equal(tab.textContent, `Products (${products.length + 1})`, "the product count on the tab (the files + the chat's artifact)");
   assert.equal(panel.hidden, true, 'the panel starts closed');
   for (const f of tab.listeners.click) f(event(tab));
   assert.equal(panel.hidden, false, 'the tab opens the panel');
@@ -325,6 +327,24 @@ test('UI: every view and event type draws without errors', async () => {
   await wait(40);
   push({ type: 'status', state: 'closed', mode: 'default', model: 'claude-x', generation: 'n1', limit: null }, false);
   assert.equal(s.readyState, 2, 'the stream is dropped when the run closes');
+
+  // a published artifact gets a card with its claude.ai link
+  push({ type: 'tool', id: 'art1', name: 'Artifact', input: { file_path: 'C:/x/weekly-report.html', title: 'Weekly report' } });
+  push({ type: 'tool-result', id: 'art1', isError: false, text: 'Published: https://claude.ai/code/artifact/0a1b' });
+  assert.ok(all.some(e => e.tag === 'a' && e.href === 'https://claude.ai/code/artifact/0a1b' && texts(e).includes('Open on claude.ai')), 'artifact card');
+  // "/" at the start of the prompt lists the skills; Enter picks the highlighted one
+  const slashInput = all.findLast(e => e.tag === 'textarea');
+  slashInput.value = '/hand';
+  for (const f of slashInput.listeners.input) f(event(slashInput));
+  await wait(30);
+  const slashMenu = all.findLast(e => e.className === 'slash-menu');
+  assert.equal(slashMenu.hidden, false, 'the menu opens');
+  assert.ok(texts(slashMenu).includes('/handoff') && !texts(slashMenu).includes('/compact'), 'filtered by what was typed');
+  for (const f of slashInput.listeners.keydown) await f({ key: 'Enter', preventDefault() {}, stopPropagation() {} });
+  assert.equal(slashInput.value, '/handoff ', 'Enter completes the name');
+  assert.ok(!requests.some(i => i.url === `/api/project/${PID}/send` && i.body?.text?.startsWith('/hand')), 'picking does not send');
+  slashInput.value = '';
+  for (const f of slashInput.listeners.input) f(event(slashInput)); // the emptied composer clears its draft
 
   // an unsent prompt is not lost when moving to another chat
   await go(`#/p/${PID}/new`);

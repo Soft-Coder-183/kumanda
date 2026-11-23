@@ -49,7 +49,8 @@ function askPermission(name, input, extra = {}) {
 
 async function turn(text) {
   interrupted = false;
-  write({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', permissionMode: mode, cwd: process.cwd() });
+  write({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', permissionMode: mode, cwd: process.cwd(),
+    slash_commands: ['fake-skill', 'compact', 'context', 'doctor', 'heapdump'], terminal_slash_commands: ['doctor'], skills: ['fake-skill'] });
   // Like the real CLI: the reset times of the current windows come even when nothing is used up.
   const resets = Math.floor(Date.now() / 1000) + 3 * 3600;
   write({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: resets,
@@ -75,6 +76,12 @@ async function turn(text) {
       write({ type: 'result', subtype: 'error_during_execution', is_error: true, duration_ms: 5, session_id: session });
       return;
     }
+  } else if (text.includes('artifact')) {
+    // The Artifact tool publishes a page to claude.ai; the result carries its link.
+    const id = `toolu_${++counter}`;
+    assistant([{ type: 'tool_use', id, name: 'Artifact', input: { file_path: 'C:/x/weekly-report.html', title: 'Weekly report' } }]);
+    toolResult(id, 'Published (private): https://claude.ai/code/artifact/0a1b2c3d-1111-4222-8333-444455556666');
+    await streamText('The report is published.');
   } else await streamText(`Reply: **${text}** (mode: ${mode}, effort: ${effort})`);
   write({ type: 'result', subtype: 'success', is_error: false, duration_ms: 1234, total_cost_usd: 0.01, result: 'done', session_id: session });
 }

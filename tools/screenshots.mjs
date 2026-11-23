@@ -256,6 +256,14 @@ try {
   await m.click('#main .composer button[title="Saved prompts"]');
   await m.waitForSelector('.menu >> text=Continue.');
   await m.keyboard.press('Escape');
+  // "/" at the start of the prompt opens the list of skills and commands; Esc closes it without stopping anything.
+  await m.click('#main .composer textarea');
+  await m.keyboard.type('/co');
+  await m.waitForSelector('.slash-menu:not([hidden]) .slash-item >> text=/compact');
+  if (process.env.KUMANDA_EXTRA_SHOTS) await m.screenshot({ path: path.join(process.env.KUMANDA_EXTRA_SHOTS, 'slash.png') });
+  await m.keyboard.press('Escape');
+  if (await m.$('.slash-menu:not([hidden])')) errors.push('Esc did not close the "/" menu');
+  await m.fill('#main .composer textarea', '');
   await m.goto(`${C}/#/p/${weather}/changes`);
   await m.waitForSelector('#main .empty, #main .git-badge');
   if (process.env.KUMANDA_EXTRA_SHOTS) await m.screenshot({ path: path.join(process.env.KUMANDA_EXTRA_SHOTS, 'changes.png') });

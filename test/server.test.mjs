@@ -656,6 +656,49 @@ test('scheduled prompts: sent into the chat at the time; cancel, send now, the l
   await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'reset passed'));
 });
 
+test('"/" commands: from Claude Code\'s init list plus the skill files; terminal-only ones left out', async () => {
+  writeFile(path.join(projectsDir, 'Alpha', '.claude', 'skills', 'deploy', 'SKILL.md'), '---\nname: deploy\ndescription: Ships the site\n---\nBody');
+  writeFile(path.join(projectsDir, 'Alpha', '.claude', 'commands', 'tools', 'lint.md'), '---\ndescription: Lints everything\n---\n');
+  writeFile(path.join(projectsDir, 'Alpha', '.claude', 'skills', 'secret', 'SKILL.md'), '---\nname: secret\nuser-invocable: false\n---\n');
+  const r = await request(`/api/project/${alpha}/commands`);
+  const byName = Object.fromEntries(r.j.commands.map(c => [c.name, c]));
+  assert.equal(r.j.fromClaude, true, 'the init list of the earlier runs was saved');
+  assert.equal(byName['fake-skill'].kind, 'skill');
+  assert.deepEqual([byName.deploy.kind, byName.deploy.description], ['skill', 'Ships the site'], 'a project skill with its description');
+  assert.equal(byName['tools:lint'].description, 'Lints everything', 'a command in a subfolder is "folder:name"');
+  assert.ok(byName.btw && byName.compact && byName.context);
+  for (const gone of ['doctor', 'heapdump', 'secret']) assert.ok(!byName[gone], `${gone} is not offered`);
+  fs.rmSync(path.join(projectsDir, 'Alpha', '.claude'), { recursive: true, force: true });
+});
+
+test('artifacts: a page Claude published to claude.ai is listed with its link, per project and per chat', async () => {
+  await send('make an artifact');
+  await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'make an artifact'));
+  const all = await request(`/api/project/${alpha}/artifacts`);
+  assert.deepEqual(all.j.artifacts.map(a => [a.title, a.file, a.url, a.session]),
+    [['Weekly report', 'weekly-report.html', 'https://claude.ai/code/artifact/0a1b2c3d-1111-4222-8333-444455556666', session]]);
+  assert.equal((await request(`/api/project/${alpha}/artifacts?session=${session}`)).j.artifacts.length, 1);
+  assert.equal((await request(`/api/project/${alpha}/artifacts?session=00000000-0000-4000-8000-000000000000`)).j.artifacts.length, 0);
+  assert.equal((await request(`/api/project/${alpha}/artifacts?session=bad`)).status, 400);
+});
+
+test('the project list is ordered by the last message, not by the file time (Claude Code rewrites old transcripts)', async () => {
+  const before = (await request('/api/projects')).j.projects.map(p => p.name);
+  // An old chat in Beta whose file was just rewritten: it must not jump above Alpha.
+  const dir = path.join(claudeDir, 'projects', path.join(projectsDir, 'Beta').replace(/[^a-zA-Z0-9]/g, '-'));
+  writeFile(path.join(dir, '99999999-9999-4999-8999-999999999999.jsonl'),
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'old question' }, cwd: path.join(projectsDir, 'Beta'), timestamp: '2025-01-02T10:00:00.000Z' }) + '\n'
+    + JSON.stringify({ type: 'cost-state' }) + '\n');
+  await new Promise(c => setTimeout(c, 8200)); // the project list is cached for 8 s
+  const list = (await request('/api/projects')).j.projects;
+  const beta = list.find(p => p.name === 'Beta');
+  assert.equal(new Date(beta.lastActivity).toISOString(), '2025-01-02T10:00:00.000Z');
+  assert.ok(list.findIndex(p => p.name === 'Alpha') < list.findIndex(p => p.name === 'Beta'), `${before} → ${list.map(p => p.name)}`);
+  const sessions = (await request(`/api/project/${beta.id}`)).j.sessions;
+  assert.equal(new Date(sessions[0].mtime).toISOString(), '2025-01-02T10:00:00.000Z', 'the chat list uses the same time');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('git: status, file diff and commit diff of a project (read only)', async () => {
   const dir = path.join(projectsDir, 'Alpha');
   const g = (...a) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...a], { cwd: dir, encoding: 'utf8' });

@@ -900,7 +900,10 @@ function projectPage(pid, tab) {
         if (cancelled) return;
         redrawInPlace(body, ...changesPage(pid, v, () => load(false)));
       } else {
-        const v = await api(`/api/project/${pid}/products?hidden${fresh ? '&fresh' : ''}`);
+        const [v, art] = await Promise.all([api(`/api/project/${pid}/products?hidden${fresh ? '&fresh' : ''}`),
+          api(`/api/project/${pid}/artifacts`).catch(() => ({ artifacts: [] }))]);
+        const artifacts = art.artifacts || [];
+        const chatName = sid => chatTitle(v.sessions?.[sid]) === 'Untitled chat' ? 'its chat' : chatTitle(v.sessions?.[sid]);
         if (cancelled) return;
         const hiddenOnes = v.products.filter(u => u.hidden);
         redrawInPlace(body,
@@ -908,6 +911,9 @@ function projectPage(pid, tab) {
             h('span', { class: 'muted small', style: 'flex:1' }, v.products.length ? 'Each product under the chat that last changed it' : ''),
             hiddenOnes.length > 0 && showAllButton(pid, hiddenOnes, () => load(false), `Show all hidden (${hiddenOnes.length})`),
             h('button', { class: 'btn small', onclick: () => load(true) }, 'Rescan')),
+          artifacts.length ? h('section', { class: 'session-group artifacts' }, h('div', { class: 'session-head' }, h('span', { class: 'name' }, `Artifacts on claude.ai (${artifacts.length})`),
+            h('span', { class: 'muted small' }, 'Pages Claude published; they open on claude.ai')),
+          artifacts.map(a => artifactCard(a, h('a', { href: `#/p/${pid}/s/${a.session}`, style: 'margin-left:6px' }, `· ${chatName(a.session)} ›`)))) : '',
           ...(v.products.length ? sessionGroups(pid, v.products, v.sessions || {}, () => load(false))
             : [h('div', { class: 'empty' }, 'No products found in this project (HTML, APK, EXE, ZIP, video, document).')]));
       }
@@ -1235,6 +1241,7 @@ function toolSummary(name, g = {}) {
     case 'WebSearch': case 'ToolSearch': return g.query || '';
     case 'Task': case 'Agent': return g.description || '';
     case 'Skill': return g.skill || '';
+    case 'Artifact': return [g.action && g.action !== 'publish' ? g.action : '', g.title || String(g.file_path || g.url || '').split(/[\\/]/).pop()].filter(Boolean).join(' · ');
     case 'TodoWrite': return `${g.todos?.length || 0} tasks`;
     case 'TaskCreate': return g.subject || '';
     case 'TaskUpdate': return `#${g.taskId || '?'}${g.status ? ` → ${g.status.replace('_', ' ')}` : ''}${g.subject ? ` · ${g.subject}` : ''}`;
@@ -1258,6 +1265,14 @@ function toolDetails(name, g = {}) {
   if (name === 'TodoWrite' && Array.isArray(g.todos)) return [taskList(g.todos.map(t => ({ subject: t.content, status: t.status })))];
   return block('Input', JSON.stringify(g, null, 2));
 }
+
+// Claude artifacts: pages Claude Code published to claude.ai (the link opens there, with your claude.ai login).
+const ARTIFACT_LINK = /https:\/\/claude\.ai\/(?:code\/)?artifacts?\/[A-Za-z0-9_-]+/;
+const artifactCard = (a, chatLink) => h('div', { class: 'artifact-card' },
+  h('span', { class: 'badge accent' }, 'Artifact'),
+  h('div', { class: 'body' }, h('div', { class: 'name' }, a.title || 'Artifact'),
+    h('div', { class: 'small muted' }, [a.file, a.at ? timeAgo(a.at) : ''].filter(Boolean).join(' · '), chatLink || '')),
+  h('a', { class: 'btn small primary', href: a.url, target: '_blank', rel: 'noopener noreferrer', title: a.url }, 'Open on claude.ai'));
 
 const TASK_MARK = { completed: '✓', in_progress: '◐', pending: '○' };
 const taskList = list => h('ul', { class: 'task-list' }, list.map(t => h('li', { class: `task ${t.status || 'pending'}` },
@@ -1290,6 +1305,15 @@ async function prepareImage(file) {
   canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
   const url = canvas.toDataURL('image/jpeg', 0.86);
   return { type: 'image/jpeg', data: url.slice(url.indexOf(',') + 1), url };
+}
+
+// The "/" list per project (skills, custom commands, built-ins), fetched once in a while.
+const commandCache = new Map(); // pid → { at, list }
+async function projectCommands(pid) {
+  const c = commandCache.get(pid);
+  if (c && Date.now() - c.at < 5 * 60e3) return c.list;
+  try { const v = await api(`/api/project/${pid}/commands`); commandCache.set(pid, { at: Date.now(), list: v.commands }); return v.commands; }
+  catch { return c?.list || []; }
 }
 
 function chatView(pid, sid) {
@@ -1344,6 +1368,7 @@ function chatView(pid, sid) {
   const attachmentsEl = h('div', { class: 'attachments' });
   const input = h('textarea', { rows: 1, placeholder: 'Write to Claude… (/btw for a side question)', 'aria-label': 'Prompt' });
   const fileInput = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
+  const slashMenu = h('div', { class: 'slash-menu', role: 'listbox', 'aria-label': 'Commands and skills', hidden: true });
   const modeSelect = h('select', { 'aria-label': 'Permission mode' }, Object.entries(MODE_LABEL).map(([d, a]) => h('option', { value: d }, a)));
   const modelOptions = Object.entries(MODEL_LABEL).map(([d, a]) => h('option', { value: d }, a));
   const modelSelect = h('select', { 'aria-label': 'Model', title: 'Model ("default" = the one in your Claude Code settings, shown in parentheses)' }, modelOptions);
@@ -1374,7 +1399,7 @@ function chatView(pid, sid) {
   }
 
   const form = h('form', { class: 'composer', onsubmit: e => { e.preventDefault(); send(); } },
-    h('div', { class: 'composer-inner' }, attachmentsEl, input,
+    h('div', { class: 'composer-inner' }, attachmentsEl, slashMenu, input,
       h('div', { class: 'composer-bar' },
         h('button', { class: 'btn flat small', type: 'button', title: 'Add image', 'aria-label': 'Add image', onclick: () => fileInput.click() }, '＋'),
         h('button', { class: 'btn flat small', type: 'button', title: 'Saved prompts', 'aria-label': 'Saved prompts', onclick: e => snippetMenu(e.currentTarget) }, 'Saved'),
@@ -1397,13 +1422,16 @@ function chatView(pid, sid) {
   async function loadProducts(fresh) {
     if (!sid || closed) return;
     try {
-      const v = await api(`/api/project/${pid}/products?session=${sid}${fresh ? '&fresh' : ''}`);
+      const [v, art] = await Promise.all([api(`/api/project/${pid}/products?session=${sid}${fresh ? '&fresh' : ''}`),
+        api(`/api/project/${pid}/artifacts?session=${sid}`).catch(() => ({ artifacts: [] }))]);
       if (closed) return;
-      productButton.textContent = `Products (${v.products.length})`;
+      const artifacts = art.artifacts || [];
+      productButton.textContent = `Products (${v.products.length + artifacts.length})`;
       const top = productPanel.firstElementChild?.scrollTop; // after Show/Hide the panel stays where you were reading
-      const inner = h('div', { class: 'chat-products-inner' }, v.products.length
-        ? productGrid(pid, v.products, () => loadProducts(false), `${pid}|s:${sid}`)
-        : h('div', { class: 'empty' }, 'This chat has not made a product yet. It shows up here when Claude writes or builds a file.'));
+      const inner = h('div', { class: 'chat-products-inner' },
+        artifacts.length ? h('div', { class: 'artifacts' }, artifacts.map(a => artifactCard(a))) : null,
+        v.products.length ? productGrid(pid, v.products, () => loadProducts(false), `${pid}|s:${sid}`)
+          : artifacts.length ? null : h('div', { class: 'empty' }, 'This chat has not made a product yet. It shows up here when Claude writes or builds a file.'));
       productPanel.replaceChildren(inner);
       if (top) inner.scrollTop = top;
     } catch { /* network error: leave the panel as it is */ }
@@ -1524,7 +1552,7 @@ function chatView(pid, sid) {
     const body = h('div', { class: 'tool-body' }, toolDetails(o.name, o.input));
     const el = h('details', { class: 'tool' },
       h('summary', {}, h('span', { class: 'tool-name' }, o.name), h('span', { class: 'tool-summary' }, toolSummary(o.name, o.input)), state), body);
-    tools.set(o.id, { el, body, state });
+    tools.set(o.id, { el, body, state, name: o.name, input: o.input || {} });
     if (!toolGroup || !toolGroup.el.isConnected) {
       const summary = h('span', { class: 'tool-summary' });
       const groupState = h('span', { class: 'tool-status' });
@@ -1557,6 +1585,8 @@ function chatView(pid, sid) {
     a.state.textContent = o.isError ? '✕' : '✓';
     if (o.text) a.body.append(h('div', { class: 'label' }, o.isError ? 'Error' : 'Result'), h('pre', { class: `block${o.isError ? ' error' : ''}` }, o.text));
     if (!o.isError) taskCreated(o);
+    const link = a.name === 'Artifact' && !o.isError && (!a.input.action || a.input.action === 'publish') ? ARTIFACT_LINK.exec(o.text || '')?.[0] : null;
+    if (link) add(artifactCard({ url: link, title: a.input.title, file: String(a.input.file_path || '').split(/[\\/]/).pop() }));
     if (a.group) groupStatus(a.group);
   }
   function settlePendingTools() {
@@ -1892,8 +1922,45 @@ function chatView(pid, sid) {
     }
     drawAttachments();
   }
-  input.addEventListener('input', () => { recall = -1; resize(); draft.write(input.value); });
+  // "/" at the start of the prompt: Claude Code's skills and commands for this project, filtered as you type.
+  let slashItems = [], slashActive = 0;
+  async function slashSuggest() {
+    const caret = input.selectionStart ?? input.value.length;
+    const m = /^\/([^\s/]*)$/.exec(input.value.slice(0, caret));
+    if (!m) { slashMenu.hidden = true; return; }
+    const list = await projectCommands(pid);
+    const q = m[1].toLowerCase();
+    if (!/^\/([^\s/]*)$/.test(input.value.slice(0, input.selectionStart ?? input.value.length))) return; // typed on meanwhile
+    const starts = list.filter(c => c.name.toLowerCase().startsWith(q)), inside = list.filter(c => !c.name.toLowerCase().startsWith(q) && (c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)));
+    slashItems = [...starts, ...inside].slice(0, 30);
+    slashActive = Math.min(slashActive, Math.max(0, slashItems.length - 1));
+    drawSlash();
+  }
+  function drawSlash() {
+    slashMenu.hidden = !slashItems.length;
+    slashMenu.replaceChildren(...slashItems.map((c, i) => h('button', { class: `slash-item${i === slashActive ? ' active' : ''}`, type: 'button', role: 'option',
+      onmousedown: e => e.preventDefault(), onclick: () => pickSlash(i) },
+    h('span', { class: 'slash-name' }, `/${c.name}`), h('span', { class: `badge${c.kind === 'skill' ? ' accent' : ''}` }, c.kind), h('span', { class: 'slash-desc' }, c.description))));
+    slashMenu.querySelector?.('.slash-item.active')?.scrollIntoView?.({ block: 'nearest' });
+  }
+  function pickSlash(i) {
+    const c = slashItems[i];
+    if (!c) return;
+    const caret = input.selectionStart ?? input.value.length;
+    input.value = `/${c.name} ${input.value.slice(caret).replace(/^\S*\s?/, '')}`;
+    slashMenu.hidden = true; slashItems = [];
+    draft.write(input.value); resize();
+    input.focus();
+    input.setSelectionRange?.(c.name.length + 2, c.name.length + 2);
+  }
+  input.addEventListener('input', () => { recall = -1; resize(); draft.write(input.value); slashActive = 0; slashSuggest(); });
+  input.addEventListener('blur', () => setTimeout(() => { slashMenu.hidden = true; }, 150));
   input.addEventListener('keydown', e => {
+    if (!slashMenu.hidden && slashItems.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); slashActive = (slashActive + (e.key === 'ArrowDown' ? 1 : -1) + slashItems.length) % slashItems.length; drawSlash(); return; }
+      if ((e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) || e.key === 'Tab') { e.preventDefault(); pickSlash(slashActive); return; }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); slashMenu.hidden = true; return; }
+    }
     // ↑ / ↓ in an empty (or recalled) composer: your earlier prompts in this chat, like in a terminal.
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && prompts.length
       && (!input.value || (recall >= 0 && input.value === prompts[prompts.length - 1 - recall]))) {

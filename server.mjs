@@ -19,6 +19,8 @@ import { DRAFT_KEY, getDraft, setDraft, getSnippets, setSnippets, SNIPPET_LIMIT,
 import { listScheduled, addScheduled, removeScheduled, runScheduled, limitResetTime, onScheduleEvent } from './src/schedule.mjs';
 import { gitStatus, gitDiff, validGitPath, validHash } from './src/git.mjs';
 import { searchChats } from './src/search.mjs';
+import { listCommands } from './src/commands.mjs';
+import { listArtifacts } from './src/artifacts.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const WEB = path.join(ROOT, 'web');
@@ -456,6 +458,16 @@ api.add('POST', '/api/project/:pid/session/:sid/meta', async ({ req, res, params
     fs.appendFileSync(file, JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: params.sid }) + '\n');
   }
   json(res, 200, { ok: true, ...setChatFlags(params.sid, g) });
+});
+
+// ── "/" commands for the composer's autocomplete (skills, custom commands, built-ins that work outside the terminal) ──
+api.add('GET', '/api/project/:pid/commands', async ({ res, params }) => json(res, 200, await listCommands(await getProject(params.pid))));
+
+// ── Claude artifacts (pages published to claude.ai) of a project, or of one chat with ?session= ──
+api.add('GET', '/api/project/:pid/artifacts', async ({ res, params, url }) => {
+  const session = url.searchParams.get('session');
+  if (session != null && !/^[0-9a-f-]{36}$/i.test(session)) throw new HttpError(400, 'Invalid session');
+  json(res, 200, { artifacts: await listArtifacts(await getProject(params.pid), session) });
 });
 
 // ── search: chat titles everywhere; with `pid`, inside that project's messages too ──

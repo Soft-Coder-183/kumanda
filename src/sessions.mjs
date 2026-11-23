@@ -8,6 +8,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { DATA, atomicWrite, config } from './config.mjs';
 import { CLAUDE_DIR, logDir, sessionFile, userText } from './projects.mjs';
+import { rememberCommands } from './commands.mjs';
 
 export const MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'];
 export const MODELS = ['', 'fable', 'opus', 'sonnet', 'haiku'];
@@ -293,6 +294,7 @@ class Run {
       case 'system':
         if (m.subtype === 'init') {
           this.model = m.model || this.model;
+          rememberCommands(this.project.id, m); // for the composer's "/" autocomplete
           if (MODES.includes(m.permissionMode)) this.mode = m.permissionMode;
           this.#transient(this.snapshot());
         } else if (m.subtype === 'compact_boundary') this.#publish({ type: 'note', text: 'Context compacted' });
