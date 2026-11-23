@@ -3,7 +3,7 @@
 A local server + web UI that lets Eren use the Claude Code on their computer and the products of all their projects (HTML, APK,
 EXE, ZIP, video, documents) from the phone or another computer. Dependency-free Node.js (22+), no build step. The server only
 listens on `127.0.0.1`; remote access comes through Tailscale forwarding (set up, own network only). Public repository (MIT):
-https://github.com/Soft-Coder-183/kumanda. Status: 2.2.0 (2026-11-22: Now list, search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
+https://github.com/Soft-Coder-183/kumanda. Status: 2.2.1 (2026-11-23: limit-reset fix; 2.2.0 2026-11-22: Now list, search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
 the agent. Details: `HANDOVER.md` (read the relevant section when needed). The owner speaks Turkish: reply to them in Turkish.
 
 ## Commands

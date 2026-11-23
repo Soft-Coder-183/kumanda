@@ -18,14 +18,17 @@ const save = () => atomicWrite(FILE, JSON.stringify(items));
 /** Called with { kind: 'sent' | 'failed' | 'missed', item, error? } (the server sends a notification for failures). */
 export function onScheduleEvent(f) { onEvent = f; }
 
-/** When the usage limit is expected to reset (ms), from the last rate limit Claude Code reported; null if unknown. */
-export function limitResetTime() {
+/** When the usage limit that is in force now resets (ms); null if no limit is in force (or it is not known).
+ *  Claude Code reports the reset time of the current windows even when nothing is used up (status "allowed"); that time
+ *  must not be used, or "continue when the limit resets" would wait for the next window although the limit is over. */
+export function limitResetTime(now = Date.now()) {
   const l = getLastLimit();
   if (!l) return null;
-  const times = [l.resetsAt, l.fiveHourResetsAt, l.sevenDayResetsAt].filter(t => typeof t === 'number' && t * 1000 > Date.now());
-  // A rejected window resets at `resetsAt`; otherwise the five-hour window is the one that usually runs out.
-  const t = l.status === 'rejected' && l.resetsAt ? l.resetsAt : times.sort((a, b) => a - b)[0];
-  return t ? t * 1000 : null;
+  const future = t => (typeof t === 'number' && t * 1000 > now ? t * 1000 : null);
+  if (l.status === 'rejected') return future(l.resetsAt) || future(l.fiveHourResetsAt);
+  if (l.fiveHour >= 1) return future(l.fiveHourResetsAt);
+  if (l.sevenDay >= 1) return future(l.sevenDayResetsAt);
+  return null;
 }
 
 export function listScheduled(session) {

@@ -639,10 +639,21 @@ test('scheduled prompts: sent into the chat at the time; cancel, send now, the l
   const manual = (await request('/api/schedule', { body: body({ at: Date.now() + 3600e3, text: 'sent by hand' }) })).j;
   assert.equal((await request('/api/schedule/run', { body: { id: manual.id } })).status, 200);
   await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'sent by hand'));
-  // The fake Claude reports no reset time: "when the limit resets" cannot be scheduled yet.
+  // "When the limit resets": the fake reports the next window's reset time with status "allowed" (as the real CLI does);
+  // no limit is in force, so that time must not be used: the prompt goes right away (bug seen 2026-11-23).
   list = await request(`/api/schedule?session=${session}`);
-  assert.equal(list.j.limitResetsAt, null);
-  assert.equal((await request('/api/schedule', { body: body({ afterLimit: true }) })).status, 409);
+  assert.equal(list.j.limitResetsAt, null, 'no limit in force: no reset time');
+  const over = await request('/api/schedule', { body: body({ afterLimit: true, text: 'limit over' }) });
+  assert.deepEqual([over.status, over.j.now], [200, true]);
+  await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'limit over'));
+  // A reset time read from the limit message: in the future → a minute after it; already past → right away.
+  const resetAt = Date.now() + 2 * 3600e3;
+  const waiting = await request('/api/schedule', { body: body({ afterLimit: true, resetAt, text: 'after the reset' }) });
+  assert.deepEqual([waiting.j.now, waiting.j.at], [false, resetAt + 60e3]);
+  await request('/api/schedule/cancel', { body: { id: waiting.j.id } });
+  const past = await request('/api/schedule', { body: body({ afterLimit: true, resetAt: Date.now() - 600e3, text: 'reset passed' }) });
+  assert.equal(past.j.now, true, 'a reset time already passed: sent now, not "pick a time"');
+  await stream('', (o, all) => isResult(o) && all.some(x => x.type === 'user' && x.text === 'reset passed'));
 });
 
 test('git: status, file diff and commit diff of a project (read only)', async () => {

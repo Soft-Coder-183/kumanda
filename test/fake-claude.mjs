@@ -50,7 +50,10 @@ function askPermission(name, input, extra = {}) {
 async function turn(text) {
   interrupted = false;
   write({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', permissionMode: mode, cwd: process.cwd() });
-  write({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.25 }, seven_day: { utilization: 0.1 } } } });
+  // Like the real CLI: the reset times of the current windows come even when nothing is used up.
+  const resets = Math.floor(Date.now() / 1000) + 3 * 3600;
+  write({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: resets,
+    unifiedWindows: { five_hour: { utilization: 0.25, resetsAt: resets }, seven_day: { utilization: 0.1, resetsAt: resets + 86400 } } } });
   record({ type: 'user', message: { role: 'user', content: text } });
   // The real CLI writes every API request to the transcript; Kumanda reads "the current effort" from there.
   record({ type: 'api-request', querySource: 'sdk', params: { model: 'claude-fake', output_config: { effort: effort === 'setting' ? 'medium' : effort } } });

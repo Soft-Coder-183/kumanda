@@ -241,6 +241,9 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 - Every new route is behind the same auth/origin checks. Git runs only fixed read commands with an argument array; the path must
   be relative without `..`, options or drive letters, a commit only hex (`validGitPath`, `validHash`; tested).
 - The rename is the only place Kumanda writes into a transcript (one appended `custom-title` line).
+- "Continue when the limit resets" (2.2.1): Claude Code sends the next window's reset time even with status "allowed";
+  `limitResetTime()` only returns a time while a limit is in force (rejected or a window at 100%). The UI sends `resetAt` read
+  from the limit message (counted from the message time); a past or missing reset means "send now" (`now: true`).
 - Scheduled prompts older than 12 h when due (computer off/asleep) are marked "missed" and not sent; failures send a push.
 - `KUMANDA_TICK_MS` makes the schedule timer fast in tests.
 - Menus/dialogs: `layer()` / `openMenu()` / `askText()`; one open at a time, Esc, a click outside or a route change closes it.

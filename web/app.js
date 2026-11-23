@@ -1662,7 +1662,7 @@ function chatView(pid, sid) {
         // Claude Code reports a used-up limit as a plain reply ("You've hit your 5-hour limit · resets 4:20am").
         if (o.text.length < 400 && /hit your .*limit|out of (usage|extra usage)|usage limit/i.test(o.text) && sid) {
           add(h('div', { class: 'buttons limit-actions' }, h('button', { class: 'btn small primary', type: 'button',
-            onclick: () => schedule({ afterLimit: true, hint: o.text, text: input.value.trim() || 'The usage limit has reset. Continue where you left off.' }) }, 'Continue when the limit resets')));
+            onclick: () => schedule({ afterLimit: true, hint: o.text, hintAt: o.at, text: input.value.trim() || 'The usage limit has reset. Continue where you left off.' }) }, 'Continue when the limit resets')));
         }
         break;
       case 'tool': drawTool(o); break;
@@ -1670,10 +1670,10 @@ function chatView(pid, sid) {
       case 'permission': drawPermission(o); break;
       case 'permission-reply': finishPermission(o); break;
       case 'note': add(h('div', { class: 'msg note' }, o.text)); break;
-      case 'error': add(errorCard(o.text)); break;
+      case 'error': add(errorCard(o.text, o.at)); break;
       case 'result':
         settlePendingTools();
-        if (o.error) add(errorCard(o.error));
+        if (o.error) add(errorCard(o.error, o.at));
         else if (!o.interrupted) add(h('div', { class: 'msg result', title: o.at ? new Date(o.at).toLocaleString() : '' },
           [o.durationMs ? `Worked for ${formatDuration(o.durationMs)}` : 'Done', formatMoment(o.at) && `finished ${formatMoment(o.at)}`].filter(Boolean).join(' · ')));
         break;
@@ -1682,39 +1682,37 @@ function chatView(pid, sid) {
   }
 
   // A failed turn: "Retry" sends your last prompt again; a usage limit offers to continue by itself when it resets.
-  function errorCard(text) {
+  function errorCard(text, at) {
     const limit = /limit|usage|rate|quota|credits/i.test(text);
     return h('div', { class: 'msg error' }, text,
       h('div', { class: 'buttons', style: 'margin-top:8px' },
         prompts.length > 0 && h('button', { class: 'btn small', type: 'button', onclick: () => { input.value = prompts.at(-1); send(); } }, 'Retry'),
-        limit && sid && h('button', { class: 'btn small primary', type: 'button', onclick: () => schedule({ afterLimit: true, hint: text, text: input.value.trim() || 'The usage limit has reset. Continue where you left off.' }) }, 'Continue when the limit resets')));
+        limit && sid && h('button', { class: 'btn small primary', type: 'button', onclick: () => schedule({ afterLimit: true, hint: text, hintAt: at, text: input.value.trim() || 'The usage limit has reset. Continue where you left off.' }) }, 'Continue when the limit resets')));
   }
 
-  /** "resets 4:20am" / "resets at 16:20" in a limit message → the next such moment (ms), or null. */
-  function resetFromText(t) {
+  /** "resets 4:20am" / "resets at 16:20" in a limit message written at `from` → the first such moment after the message
+   *  (ms), or null. A moment already past means the limit is over (the server then sends right away). */
+  function resetFromText(t, from) {
     const m = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(t || '');
     if (!m) return null;
     let hour = Number(m[1]) % (m[3] ? 12 : 24);
     if (m[3]?.toLowerCase() === 'pm') hour += 12;
-    const d = new Date(); d.setHours(hour, Number(m[2] || 0), 0, 0);
-    if (d.getTime() < Date.now() - 60e3) d.setDate(d.getDate() + 1);
+    const base = from || Date.now();
+    const d = new Date(base); d.setHours(hour, Number(m[2] || 0), 0, 0);
+    if (d.getTime() < base - 60e3) d.setDate(d.getDate() + 1);
     return d.getTime();
   }
   /** Schedules a prompt into this chat: at a time, or when the usage limit resets (known from Claude's replies). */
-  async function schedule({ at, afterLimit, text, hint }) {
+  async function schedule({ at, afterLimit, text, hint, hintAt }) {
     if (!sid) { toast('Start the chat first'); return; }
     if (!text) { toast('Write the prompt to send later first'); return; }
     const body = { project: pid, session: sid, text, mode, model, effort: effortSelect.value };
     try {
-      let r;
-      try { r = await api('/api/schedule', afterLimit ? { ...body, afterLimit: true } : { ...body, at }); }
-      catch (x) {
-        const guess = afterLimit && x.status === 409 ? resetFromText(hint) : null; // the reset time only written in the message
-        if (!guess) throw x;
-        r = await api('/api/schedule', { ...body, at: guess + 60e3 });
-      }
+      const resetAt = afterLimit ? resetFromText(hint, hintAt) : null;
+      const r = await api('/api/schedule', afterLimit ? { ...body, afterLimit: true, ...(resetAt ? { resetAt } : {}) } : { ...body, at });
       if (input.value.trim() === text) { input.value = ''; draft.write(''); resize(); }
-      toast(`Scheduled for ${formatMoment(r.at)}`);
+      toast(r.now ? 'The limit is already over: sending now' : `Scheduled for ${formatMoment(r.at)}`);
+      if (r.now) openStream();
       loadScheduled();
     } catch (x) { if (x.status !== 401) toast(x.message); }
   }
@@ -1724,7 +1722,7 @@ function chatView(pid, sid) {
     const at = mins => Date.now() + mins * 60e3;
     const when = h('input', { type: 'datetime-local', 'aria-label': 'Send at', value: new Date(Date.now() + 3600e3 - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 16) });
     openMenu(anchor, [
-      { label: 'When the usage limit resets', hint: reset ? formatMoment(reset) : 'time not known yet', disabled: !reset, onClick: () => schedule({ afterLimit: true, text: text || 'The usage limit has reset. Continue where you left off.' }) },
+      { label: 'When the usage limit resets', hint: reset ? formatMoment(reset) : 'no limit in force', disabled: !reset, onClick: () => schedule({ afterLimit: true, text: text || 'The usage limit has reset. Continue where you left off.' }) },
       { label: 'In 30 minutes', onClick: () => schedule({ at: at(30), text }) },
       { label: 'In 1 hour', onClick: () => schedule({ at: at(60), text }) },
       { label: 'In 3 hours', onClick: () => schedule({ at: at(180), text }) },

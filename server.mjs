@@ -500,13 +500,18 @@ api.add('POST', '/api/schedule', async ({ req, res }) => {
   if (g.effort != null && !EFFORTS.includes(g.effort)) throw new HttpError(400, 'Invalid effort');
   let at = Number(g.at);
   if (g.afterLimit) {
-    const reset = limitResetTime();
-    if (!reset) throw new HttpError(409, 'The reset time of the usage limit is not known yet (it is learned from Claude\'s replies)');
-    at = reset + 60e3; // a minute of margin
+    // The reset time: from the limit message the button was under (`resetAt`, read by the UI from "resets 4:20am"), else
+    // from the limit Claude Code reported. A reset that has already passed, or no limit in force, means: send now.
+    const fromMessage = Number(g.resetAt);
+    const reset = Number.isFinite(fromMessage) && fromMessage > 0 ? fromMessage : limitResetTime();
+    at = reset && reset > Date.now() ? reset + 60e3 : Date.now(); // a minute of margin after the reset
   }
   if (!Number.isFinite(at) || at < Date.now() - 60e3 || at > Date.now() + 14 * 86400e3) throw new HttpError(400, 'Pick a time within the next 14 days');
   try {
-    json(res, 200, addScheduled({ project: project.id, session: g.session, text, at, mode: g.mode, model: g.model, effort: g.effort, afterLimit: g.afterLimit }));
+    const item = addScheduled({ project: project.id, session: g.session, text, at, mode: g.mode, model: g.model, effort: g.effort, afterLimit: g.afterLimit });
+    const now = item.at <= Date.now();
+    if (now) runScheduled(item.id); // the limit is already over: no need to wait for the timer
+    json(res, 200, { ...item, now });
   } catch (e) { throw new HttpError(e.status || 500, e.message); }
 });
 api.add('POST', '/api/schedule/cancel', async ({ req, res }) => {
