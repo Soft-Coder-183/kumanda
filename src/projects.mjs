@@ -35,6 +35,25 @@ async function findCwd(file, size) {
 }
 
 const logDirName = p => path.resolve(p).replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+
+// When a transcript was really last used: the newest "timestamp" in its last lines. The file's modification time is not
+// enough: Claude Code sometimes rewrites old transcripts (metadata lines), which moved old or chat-less projects to the top
+// of the list (2026-11-23). Cached by modification time + size.
+const activityCache = new Map(); // file → { key, at }
+const STAMP = /"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)"/g;
+export async function lastUsed(file, mtime, size) {
+  const key = `${mtime}:${size}`;
+  const c = activityCache.get(file);
+  if (c?.key === key) return c.at;
+  let at = 0;
+  try {
+    for (const m of (await readChunk(file, Math.max(0, size - 65536), 65536)).matchAll(STAMP)) at = Math.max(at, Date.parse(m[1]) || 0);
+    if (!at && size > 65536) for (const m of (await readChunk(file, 0, 65536)).matchAll(STAMP)) at = Math.max(at, Date.parse(m[1]) || 0);
+  } catch { /* deleted meanwhile */ }
+  at = at ? Math.min(at, mtime) : mtime; // no timestamp at all: fall back to the file time
+  activityCache.set(file, { key, at });
+  return at;
+}
 let logDirNames = new Set(); // folders Claude Code knows even without sessions (e.g. only memory)
 
 /** lowercase path → { path, dirs[], last (ms), count } */
@@ -49,7 +68,7 @@ async function readLogs() {
     try { names = (await fsp.readdir(dir)).filter(f => f.endsWith('.jsonl')); } catch { return; }
     if (!names.length) return;
     const files = (await Promise.all(names.map(async f => {
-      try { const s = await fsp.stat(path.join(dir, f)); return { f, m: s.mtimeMs, b: s.size }; } catch { return null; }
+      try { const s = await fsp.stat(path.join(dir, f)); return { f, m: await lastUsed(path.join(dir, f), s.mtimeMs, s.size), b: s.size }; } catch { return null; }
     }))).filter(Boolean).sort((a, b) => b.m - a.m);
     if (!files.length) return;
     let cwd = cwdCache.get(dir);
@@ -187,7 +206,7 @@ export async function listSessions(project, limit = 80) {
       try {
         const file = path.join(dir, f);
         const s = await fsp.stat(file);
-        all.push({ id: f.slice(0, -6), file, mtime: s.mtimeMs, size: s.size });
+        all.push({ id: f.slice(0, -6), file, mtime: await lastUsed(file, s.mtimeMs, s.size), size: s.size });
       } catch { /* deleted */ }
     }
   }
