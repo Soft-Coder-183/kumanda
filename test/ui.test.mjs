@@ -63,8 +63,6 @@ const replies = {
   '/api/project-create': { project: { id: 'cccccccccccc', name: 'Test Project' } },
   '/api/devices': { devices: [{ id: 'k1', device: 'Android · Chrome', lastSeen: now, current: true }, { id: 'k2', device: 'Windows · Edge', lastSeen: now - 1e6, current: false }] },
   [`/api/project/${PID}/send`]: { session: SID, generation: 'n1' },
-  '/api/runs': { runs: [{ session: SID, project: PID, projectName: 'Alpha', state: 'running', turnStart: now - 5000, finishedAt: 0, title: 'First chat' },
-    { session: 'y', project: PID, projectName: 'Alpha', state: 'ready', turnStart: 0, finishedAt: now, title: 'Done chat' }] },
   '/api/snippets': { snippets: ['Continue.', 'Run the tests'] },
   '/api/schedule': { items: [{ id: 's1', project: PID, session: SID, text: 'later prompt', at: now + 3600e3, state: 'waiting' }], limitResetsAt: now + 7200e3 },
   '/api/drafts': { text: '', at: 0 },
@@ -440,8 +438,8 @@ test('UI: every view and event type draws without errors', async () => {
   await go(`#/p/${PID}/f/missing.txt`);
   assert.ok(texts(root).some(m => m.includes('File not found')));
 
-  // the "Now" list in the sidebar: the working chat and a finished one not looked at yet
-  assert.ok(texts(root).includes('Done chat') && texts(root).includes('done'), 'a finished, unseen chat is in "Now"');
+  // no "Now" list in the sidebar (removed in 2.3.1): chats show only under their project
+  assert.ok(!texts(root).includes('Now'), 'no "Now" section in the sidebar');
 
   // Changes tab (git): files, commits; a diff and a commit view go back to Changes
   from = all.length;

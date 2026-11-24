@@ -302,9 +302,6 @@ pre.block.error { color: var(--bad); }
 .badge.good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
 .offline-bar { position: fixed; top: env(safe-area-inset-top); left: 50%; transform: translateX(-50%); z-index: 60; background: var(--warn); color: #fff; padding: 5px 14px; border-radius: 0 0 10px 10px; font-size: 13px; font-weight: 600; }
 
-/* sidebar "Now" */
-.list.now { padding-top: 4px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
-.section-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 6px 10px 2px; font-weight: 650; }
 
 /* menus, sheets, dialogs */
 .layer-backdrop { position: fixed; inset: 0; z-index: 40; }

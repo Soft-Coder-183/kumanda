@@ -399,33 +399,7 @@ function showLogin() {
 // ───────── shell and routing ─────────
 let projects = [];
 let view = null; // the active view (cleaned up with close())
-let side, main, listEl, searchEl, explorer, treeEl, explorerNameEl, newProjectEl, nowEl;
-let runs = [];
-
-// Chats you have looked at since they last finished: a finished chat you have not seen is marked "done" in the Now list.
-const seen = (() => { try { return JSON.parse(store.get('kumanda.seen')) || {}; } catch { return {}; } })();
-function markSeen(sid) {
-  seen[sid] = Date.now();
-  const keys = Object.keys(seen);
-  if (keys.length > 200) for (const k of keys.sort((a, b) => seen[a] - seen[b]).slice(0, keys.length - 200)) delete seen[k];
-  store.set('kumanda.seen', JSON.stringify(seen));
-}
-const unseen = r => r.state === 'ready' && r.finishedAt && r.finishedAt > (seen[r.session] || 0);
-
-/** "Now": every open chat (working, waiting for you, or finished and not looked at yet) across all projects. */
-function drawNow() {
-  if (!nowEl) return;
-  const current = /^#\/p\/[0-9a-f]+\/s\/([0-9a-f-]+)/.exec(location.hash)?.[1];
-  const shown = runs.filter(r => r.state === 'running' || r.state === 'waiting' || unseen(r));
-  const order = { waiting: 0, running: 1, ready: 2 };
-  shown.sort((a, b) => order[a.state] - order[b.state] || (b.finishedAt || b.turnStart) - (a.finishedAt || a.turnStart));
-  nowEl.hidden = !shown.length;
-  nowEl.replaceChildren(h('div', { class: 'section-label' }, 'Now'), ...shown.map(r => h('a', { class: `row now-row${r.session === current ? ' selected' : ''}`, href: `#/p/${r.project}/s/${r.session}` },
-    h('span', { class: `dot ${r.state}` }),
-    h('div', { class: 'body' }, h('div', { class: 'name' }, r.title),
-      h('div', { class: 'info' }, `${r.projectName} · ${r.state === 'waiting' ? 'waiting for you' : r.state === 'running' ? `working${r.turnStart ? ` ${formatDuration(Date.now() - r.turnStart)}` : ''}` : `done ${timeAgo(r.finishedAt)}`}`)),
-    r.state === 'ready' && h('span', { class: 'badge good' }, 'done'))));
-}
+let side, main, listEl, searchEl, explorer, treeEl, explorerNameEl, newProjectEl;
 
 /** The "new project" form under the search box in the sidebar: creates an empty folder in the projects folder, goes to a new chat. */
 function newProjectForm() {
@@ -527,7 +501,7 @@ function shell() {
     h('div', { class: 'search' }, searchEl,
       h('button', { class: 'btn icon small', type: 'button', title: 'New project', 'aria-label': 'New project', onclick: () => newProjectForm() }, '＋')),
     newProjectEl = h('div', { class: 'new-project', hidden: true }),
-    h('div', { class: 'scroll' }, nowEl = h('div', { class: 'list now', hidden: true }), listEl),
+    h('div', { class: 'scroll' }, listEl),
     handle('handle', { start: () => layout.sideWidth, set: setSide }));
   treeEl = h('div', { class: 'tree', role: 'tree', 'aria-label': 'Project files' });
   explorerNameEl = h('div', { class: 'explorer-name' });
@@ -663,9 +637,8 @@ function setExplorer(pid, file) {
 
 async function refreshProjects() {
   try {
-    const [p, r] = await Promise.all([api('/api/projects'), api('/api/runs')]);
-    projects = p.projects; runs = r.runs || [];
-    drawProjects(); drawNow();
+    projects = (await api('/api/projects')).projects;
+    drawProjects();
   } catch { /* the login screen is shown, or no network */ }
 }
 
@@ -796,7 +769,6 @@ function route() {
   else if (p[0] === 'share') view = shareView();
   else main.replaceChildren(h('div', { class: 'center muted' }, 'Pick a project on the left or look at Products.'));
   drawProjects();
-  drawNow();
 }
 
 /** #/p/<pid>/last: opens the project's latest chat (or the chats tab if there is none). The address is replaced so Back does not loop. */
@@ -1515,7 +1487,7 @@ function chatView(pid, sid) {
         h('button', { class: 'btn small flat danger', type: 'button', onclick: async () => { try { await api('/api/schedule/cancel', { id: o.id }); } catch (x) { toast(x.message); } loadScheduled(); } }, 'Cancel'))));
     } catch { /* offline */ }
   }
-  if (sid) { lastChat.set(pid, sid); markSeen(sid); }
+  if (sid) lastChat.set(pid, sid);
   main.replaceChildren(topBar({ title: titleRow, sub: projectName(pid), back: `#/p/${pid}`, backLabel: 'Chats', pid, right: [vscodeButton, chatMenu] }), productPanel,
     h('div', { class: 'scroll-wrap' }, scrollEl, jumpButton), taskPanel, scheduledEl, statusEl, form);
 
@@ -1839,7 +1811,7 @@ function chatView(pid, sid) {
       case 'limit': if (live) { live.limit = o.limit; drawStatus(); } break;
       default:
         if ((o.type === 'result' || o.type === 'permission') && document.hidden) document.title = '● Kumanda';
-        if (o.type === 'result') { rescanProducts(); if (!document.hidden) markSeen(sid); refreshProjects(); }
+        if (o.type === 'result') { rescanProducts(); refreshProjects(); }
         drawItem(o);
     }
   }

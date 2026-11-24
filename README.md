@@ -61,8 +61,7 @@ How it compares with VS Code, Remote Control and Claude Code on the web: [Why Ku
   (turned on per device).
 - **The work does not stop when you disconnect.** Even if your phone goes to sleep Claude keeps working; when you come back you see
   it from where you left off.
-- **See what is running.** The "Now" list at the top of the sidebar shows every chat that is working, waiting for you, or
-  finished while you were away, across all projects.
+- **See what is running.** In the sidebar a project's dot shows whether one of its chats is working or waiting for you.
 - **Find anything.** `Ctrl+K` (or **Search** in the sidebar) finds projects, chats in every project and actions; in a project's
   Chats tab you can filter chats and search inside the messages. Chats can be pinned, renamed (the name shows in the terminal
   too) and archived.
@@ -206,8 +205,8 @@ What only Kumanda does:
    build the APK or the EXE you actually use.
 3. **The results, not just the chat.** Every project's outputs (web pages, APKs, EXEs, ZIPs, videos, documents) in one place,
    grouped by the chat that made them: install the APK on the phone, open the web page, download the EXE.
-4. **All projects at once.** The "Now" list shows every chat that is working, waiting for a permission or finished, across all
-   projects, with notifications.
+4. **All projects at once.** Every project is one click away in the sidebar, with a dot that shows which ones are working or
+   waiting for a permission, and notifications when Claude finishes.
 5. **Made for working away from the desk.** Permission cards, send later (for example when the usage limit resets), saved
    prompts, drafts that follow you between devices, the git changes and the project files to review what Claude did.
 6. **Many projects in one window, at the desk too.** When you prompt several small projects in turn, they are all one click
