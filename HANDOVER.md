@@ -8,7 +8,8 @@ this file `PROJE_DEVIR.md` and the build files `DERLE.md`/`derle.ps1`; in this p
 - **Owner:** Eren (speaks Turkish; replies to them in Turkish). For their own use; the repository is public (MIT).
 - **Repository:** https://github.com/Soft-Coder-183/kumanda (public since 2026-11-16). Releases are GitHub tags + releases; nothing
   is built, so no files are attached (the source zip is enough).
-- **Status:** 2.2.0 (2026-11-22): the "Now" list, search everything (Ctrl+K), chat pin/rename/archive and message search,
+- **Status:** 2.3.1 (2026-11-24): the sidebar "Now" list removed (owner's wish: it repeated running projects under the chat
+  name). 2.3.0 (2026-11-23): "/" menu, Claude artifacts, project order by the last message. 2.2.0 (2026-11-22): search everything (Ctrl+K), chat pin/rename/archive and message search,
   the Changes (git) tab, scheduled prompts, saved prompts, drafts shared between devices, task panel, copy buttons, themes. 2.1.0 (2026-11-21): `/btw` reuses the chat's prompt cache, "Chats"/"Back to chat" navigation, the VS Code button,
   the handover/build files renamed. 2.0.0 (same day): the whole repository moved from Turkish to English. The server and the Claude protocol were tried with real Claude Code 2.1.322/2.1.329. The UI is tried in
   headless Chrome (`tools/screenshots.mjs`). Tailscale forwarding is set up (own network only), the https address was tried from
@@ -78,7 +79,7 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | VS Code | `POST /api/project/:pid/vscode { session? }`: opens the project in VS Code on the computer and the chat in the Claude Code extension panel (see "VS Code button") |
 | Navigation | Chat top bar: "‹ Chats" → the project's chat list; file viewer: "‹ Back to chat" → the last chat opened in that project (`lastChat`, in memory per tab) |
 | Layout | On the desktop the sidebar and the files panel resize/close by dragging; on the phone swipeable drawers |
-| Now (2.2.0) | Sidebar list of open runs across projects (`GET /api/runs` + titles): working, waiting, finished and not seen (`localStorage['kumanda.seen']`) |
+| Runs | `GET /api/runs` (with chat titles) is kept for the API; the sidebar "Now" list that used it (2.2.0) was removed in 2.3.1 at the owner's wish (do not add it back). `localStorage['kumanda.seen']` is no longer used |
 | Search (2.2.0) | Ctrl+K palette (projects, chats of the current project, `GET /api/search?q=` titles everywhere, actions); Chats tab filter + `?pid=` message search |
 | Chat flags (2.2.0) | `POST /api/project/:pid/session/:sid/meta { pinned?, archived?, title? }`; the title is a `custom-title` line appended to the transcript (what Claude Code's /rename writes), refused while the run works |
 | Changes (2.2.0) | Project tab `#/p/<pid>/changes`, `#/p/<pid>/diff/<path>`, `#/p/<pid>/commit/<hash>`; `GET /api/project/:pid/git` and `/git/diff?path=|commit=` |
