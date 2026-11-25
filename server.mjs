@@ -12,7 +12,7 @@ import { config, watchConfig, saveConfig, loadConfig, atomicWrite, ROOT, DATA } 
 import { HttpError, Router, cookies, setCookie, sendFile, plainText, requestInfo, json, readJson, redirect } from './src/http.mjs';
 import * as auth from './src/auth.mjs';
 import { readFileForView, safePath, listFolder, sessionFile, listSessions, findProject, hideProject, listProjects, hideProducts, listProducts, linkProductsToSessions } from './src/projects.mjs';
-import { EFFORTS, MODELS, MODES, setNotifier, effortSettings, readHistory, send, closeAllRuns, findRun, listRuns, lastRequest, getLastLimit } from './src/sessions.mjs';
+import { EFFORTS, MODELS, MODES, setNotifier, effortSettings, readHistory, readSince, send, closeAllRuns, findRun, listRuns, lastRequest, getLastLimit } from './src/sessions.mjs';
 import * as push from './src/push.mjs';
 import { interleave, askBtw, btwExists, btwQuestions } from './src/btw.mjs';
 import { DRAFT_KEY, getDraft, setDraft, getSnippets, setSnippets, SNIPPET_LIMIT, SNIPPET_TEXT, chatFlags, setChatFlags } from './src/store.mjs';
@@ -316,6 +316,17 @@ api.add('GET', '/api/project/:pid/session/:sid', async ({ res, params, url }) =>
   const btws = (await btwQuestions(params.sid)).filter(y => y.at >= first && !(r && !r.closed && y.at >= r.historyLimitAt));
   json(res, 200, { ...history, items: interleave(history.items, btws), live: r ? r.snapshot() : null,
     lastRequest: file ? await lastRequest(file) : null, limit: getLastLimit() });
+});
+
+// Following a chat that goes on outside Kumanda (terminal, VS Code, desktop app): the items added after byte `offset`
+// (`offset` comes from the history route, then from the previous call).
+api.add('GET', '/api/project/:pid/session/:sid/since', async ({ res, params, url }) => {
+  const project = await getProject(params.pid);
+  const offset = Number(url.searchParams.get('offset'));
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new HttpError(400, 'Invalid offset');
+  const file = await sessionFile(project, params.sid);
+  if (!file) throw new HttpError(404, 'Session not found');
+  json(res, 200, await readSince(file, offset));
 });
 
 // /btw side question: a tool-less copy of the chat that is never written to disk answers it; the chat itself does not

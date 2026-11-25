@@ -699,6 +699,33 @@ test('the project list is ordered by the last message, not by the file time (Cla
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a chat going on outside Kumanda: a prompt sharing its message with a system note shows; new lines come after the offset', async () => {
+  const beta = (await request('/api/projects')).j.projects.find(p => p.name === 'Beta');
+  const dir = path.join(claudeDir, 'projects', path.join(projectsDir, 'Beta').replace(/[^a-zA-Z0-9]/g, '-'));
+  const sid = '88888888-8888-4888-8888-888888888888', file = path.join(dir, `${sid}.jsonl`);
+  const line = o => JSON.stringify({ cwd: path.join(projectsDir, 'Beta'), timestamp: '2025-01-03T10:00:00.000Z', ...o }) + '\n';
+  // What Claude Code 2.1.330 wrote after a resume: image, a system note, then the typed prompt, all in one message.
+  writeFile(file, line({ type: 'user', message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } },
+    { type: 'text', text: '<system-reminder>\nThis conversation is now continuing.\n</system-reminder>' }, { type: 'text', text: 'Show the weekly view too' }] } })
+    + line({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>only a note</system-reminder>' }] } }));
+  const h = await request(`/api/project/${beta.id}/session/${sid}`);
+  assert.deepEqual(h.j.items.filter(o => o.type === 'user').map(o => [o.text, o.images]), [['Show the weekly view too', 1]], 'the prompt shows, the note alone does not');
+  assert.equal(h.j.offset, fs.statSync(file).size);
+  // Another window goes on: a complete line and one still being written (no newline yet).
+  fs.appendFileSync(file, line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Adding it' }] } }) + '{"type":"assistant","mess');
+  const a = await request(`/api/project/${beta.id}/session/${sid}/since?offset=${h.j.offset}`);
+  assert.deepEqual(a.j.items.map(o => o.text), ['Adding it']);
+  assert.equal(a.j.offset, fs.statSync(file).size - '{"type":"assistant","mess'.length, 'a half-written line waits');
+  fs.appendFileSync(file, 'age":{"role":"assistant","content":[{"type":"text","text":"Done"}]}}\n');
+  const b = await request(`/api/project/${beta.id}/session/${sid}/since?offset=${a.j.offset}`);
+  assert.deepEqual(b.j.items.map(o => o.text), ['Done']);
+  assert.deepEqual((await request(`/api/project/${beta.id}/session/${sid}/since?offset=${b.j.offset}`)).j.items, []);
+  assert.equal((await request(`/api/project/${beta.id}/session/${sid}/since?offset=${b.j.offset + 50}`)).j.reset, true, 'a shorter file: load it all again');
+  assert.equal((await request(`/api/project/${beta.id}/session/${sid}/since?offset=-1`)).status, 400);
+  assert.equal((await request(`/api/project/${beta.id}/session/00000000-0000-4000-8000-000000000000/since?offset=0`)).status, 404);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('git: status, file diff and commit diff of a project (read only)', async () => {
   const dir = path.join(projectsDir, 'Alpha');
   const g = (...a) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...a], { cwd: dir, encoding: 'utf8' });

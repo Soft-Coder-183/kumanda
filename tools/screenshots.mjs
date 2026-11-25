@@ -67,6 +67,7 @@ source('package.json', '{\n  "name": "weather",\n  "version": "1.3.0",\n  "priva
 source('build.ps1', '# Builds the APK and the installer\n$version = (Get-Content package.json | ConvertFrom-Json).version\nnpm run build:android\nWrite-Host "Version $version ready"\n');
 
 // ── demo chats (in the Claude Code transcript format) ──
+const chatFiles = new Map(); // chat id → transcript file
 function chat(project, title, steps) {
   const cwd = path.join(projects, project);
   const id = crypto.randomUUID();
@@ -74,6 +75,7 @@ function chat(project, title, steps) {
   for (const [at, type, content] of steps) lines.push({ type, message: { role: type, content }, cwd, sessionId: id, timestamp: new Date(at).toISOString() });
   const file = path.join(claude, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${id}.jsonl`);
   write(file, lines.map(s => JSON.stringify(s)).join('\n') + '\n');
+  chatFiles.set(id, file);
   const last = new Date(steps.at(-1)[0]);
   fs.utimesSync(file, last, last); // "last activity" is read from the file time
   return id;
@@ -93,7 +95,7 @@ const mainChat = chat('Weather', 'Weekly forecast screen', [
   [t0 + 8 * min, 'user', result('t3', 'wrote dist/Weather-1.3.0.apk')],
   [t0 + 8 * min, 'assistant', text('## Done\n\nThe home screen now has a **7-day forecast**.\n\n| Day | Icon | High / low |\n|---|---|---|\n| Today | sunny | 18° / 9° |\n| Tomorrow | rainy | 14° / 8° |\n\n- The tests pass (24/24).\n- APK: `dist/Weather-1.3.0.apk`; you can install it on your phone from the **Products** tab in Kumanda.')],
 ]);
-chat('Weather', 'Android icon and Windows installer', [
+const iconChat = chat('Weather', 'Android icon and Windows installer', [
   [now - 2 * day - 20 * min, 'user', 'Make an icon for the app and build a Windows installer too.'],
   [now - 2 * day - 4 * min, 'assistant', text('The icon is added, `dist/Weather-setup.exe` is ready.')],
 ]);
@@ -264,6 +266,14 @@ try {
   await m.keyboard.press('Escape');
   if (await m.$('.slash-menu:not([hidden])')) errors.push('Esc did not close the "/" menu');
   await m.fill('#main .composer textarea', '');
+  // A chat going on outside Kumanda (terminal, VS Code): lines added to its transcript show up without reopening it.
+  await m.goto(`${C}/#/p/${weather}/s/${iconChat}`);
+  await m.waitForSelector('.msg.claude >> text=The icon is added');
+  const line = (type, content) => JSON.stringify({ type, message: { role: type, content }, timestamp: new Date().toISOString() }) + '\n';
+  fs.appendFileSync(chatFiles.get(iconChat), line('user', [{ type: 'text', text: '<system-reminder>note</system-reminder>' }, { type: 'text', text: 'Typed in VS Code' }])
+    + line('assistant', [{ type: 'text', text: 'Followed from elsewhere' }]));
+  await m.waitForSelector('.msg.user >> text=Typed in VS Code', { timeout: 10000 });
+  await m.waitForSelector('.msg.claude >> text=Followed from elsewhere', { timeout: 10000 });
   await m.goto(`${C}/#/p/${weather}/changes`);
   await m.waitForSelector('#main .empty, #main .git-badge');
   if (process.env.KUMANDA_EXTRA_SHOTS) await m.screenshot({ path: path.join(process.env.KUMANDA_EXTRA_SHOTS, 'changes.png') });

@@ -7,7 +7,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DATA, atomicWrite, config } from './config.mjs';
-import { CLAUDE_DIR, logDir, sessionFile, userText } from './projects.mjs';
+import { CLAUDE_DIR, logDir, sessionFile, typedText, userText } from './projects.mjs';
 import { rememberCommands } from './commands.mjs';
 
 export const MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'];
@@ -51,7 +51,10 @@ export function toItems(line) {
       // A terminal /btw lands in the transcript only as an empty call; the real questions come from btw.mjs.
       if (command) { if (command[1].trim() !== '/btw') items.push({ type: 'note', text: command[1].trim() }); }
       else if (/^\[Request interrupted/.test(text)) items.push({ type: 'note', text: 'Stopped' });
-      else if ((text || images) && !NOT_TYPED.test(text)) items.push({ type: 'user', text, images });
+      else {
+        const typed = typedText(content, NOT_TYPED);
+        if (typed || (images && !NOT_TYPED.test(text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')))) items.push({ type: 'user', text: typed, images });
+      }
     }
   } else if (line.type === 'system' && line.subtype === 'compact_boundary') {
     items.push({ type: 'note', text: 'Context compacted' });
@@ -72,24 +75,48 @@ export async function readHistory(file, limit = Infinity, older = false) {
   const end = Math.min(size, limit);
   const start = Math.max(0, end - MAX_BYTES);
   if (end <= 0) return { items: [], truncated: false };
-  const fh = await fsp.open(file, 'r');
-  let text;
-  try {
-    const buf = Buffer.alloc(end - start);
-    const { bytesRead } = await fh.read(buf, 0, end - start, start);
-    text = buf.subarray(0, bytesRead).toString('utf8');
-  } finally { await fh.close(); }
-  const lines = text.split('\n');
+  const { lines, offset } = await readLines(file, start, end);
   if (start > 0) lines.shift(); // the first line may be partial
-  let items = [];
-  for (const l of lines) {
-    if (!l.includes('"type":"user"') && !l.includes('"type":"assistant"') && !l.includes('compact_boundary')) continue;
-    try { items.push(...toItems(JSON.parse(l))); } catch { /* partial or broken line */ }
-  }
+  let items = linesToItems(lines);
   items = addTurnEnds(items);
   const truncated = start > 0 || items.length > MAX_ITEMS;
   if (items.length > MAX_ITEMS) items = items.slice(-MAX_ITEMS);
-  return { items, truncated };
+  return { items, truncated, offset };
+}
+
+/** Complete lines between two byte positions; `offset` is the end of the last complete line (a line still being written waits). */
+async function readLines(file, start, end) {
+  const fh = await fsp.open(file, 'r');
+  let buf;
+  try {
+    buf = Buffer.alloc(end - start);
+    const { bytesRead } = await fh.read(buf, 0, end - start, start);
+    buf = buf.subarray(0, bytesRead);
+  } finally { await fh.close(); }
+  const cut = buf.lastIndexOf(10) + 1; // after the last "\n"
+  return { lines: buf.subarray(0, cut).toString('utf8').split('\n'), offset: start + cut };
+}
+
+function linesToItems(lines) {
+  const items = [];
+  for (const l of lines) {
+    if (!l.includes('"type":"user"') && !l.includes('"type":"assistant"') && !l.includes('compact_boundary')) continue;
+    try { items.push(...toItems(JSON.parse(l))); } catch { /* broken line */ }
+  }
+  return items;
+}
+
+/**
+ * New items of a transcript after byte `offset` (a chat that goes on outside Kumanda: terminal, VS Code, the desktop app).
+ * `reset: true` when the file got shorter (rewritten) or too much was added: the caller loads the whole history again.
+ */
+export async function readSince(file, offset) {
+  let size;
+  try { size = (await fsp.stat(file)).size; } catch { return { items: [], offset, reset: true }; }
+  if (size < offset || size - offset > 8 * 1024 * 1024) return { items: [], offset, reset: true };
+  if (size === offset) return { items: [], offset };
+  const r = await readLines(file, offset, size);
+  return { items: linesToItems(r.lines), offset: r.offset };
 }
 
 /** The transcript has no "turn finished" line: after each prompt's last item a "result" item is added, like in the live

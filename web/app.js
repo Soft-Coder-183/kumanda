@@ -1289,7 +1289,7 @@ async function projectCommands(pid) {
 }
 
 function chatView(pid, sid) {
-  let source = null, marker = '', live = null, activity = '', closed = false, queue = null;
+  let source = null, marker = '', live = null, activity = '', closed = false, queue = null, offset = null;
   let streamingEl = null, streamingText = '', drawTimer = 0, hiddenTimer = 0;
   const tools = new Map(), permissions = new Map(), btws = new Map(), attachments = [];
   const prompts = []; // your prompts in this chat, for ↑/↓ in an empty composer and "Retry"
@@ -1803,7 +1803,7 @@ function chatView(pid, sid) {
       case 'status':
         live = o; if (o.state !== 'running') activity = '';
         drawStatus();
-        if (o.state === 'closed') { closeStream(); settlePendingTools(); }
+        if (o.state === 'closed') { closeStream(); settlePendingTools(); offset = null; } // the follow timer reloads from the transcript
         break;
       case 'reload': loadHistory(); break;
       case 'delta': delta(o); break;
@@ -1845,12 +1845,13 @@ function chatView(pid, sid) {
       settlePendingTools();
       drawTasks();
       live = v.live;
+      offset = v.offset ?? 0;
       historyLastRequest = v.lastRequest || null;
       savedLimit = v.limit || null;
       drawStatus();
       scrollEl.scrollTop = older === true ? scrollEl.scrollHeight - fromBottom : scrollEl.scrollHeight;
     } catch (x) {
-      if (x.status === 404) streamEl.replaceChildren(h('div', { class: 'empty' }, 'This chat was not found.'));
+      if (x.status === 404) { offset = 0; streamEl.replaceChildren(h('div', { class: 'empty' }, 'This chat was not found.')); }
       else if (x.status !== 401) toast(x.message);
     } finally {
       const waiting = queue || [];
@@ -1982,6 +1983,25 @@ function chatView(pid, sid) {
   };
   document.addEventListener('visibilitychange', visibility);
 
+  // A chat that goes on outside Kumanda (terminal, VS Code, the desktop app) has no stream here: new transcript lines are
+  // fetched every few seconds while the page is visible. `offset` comes from loadHistory; null means "load it all again".
+  let following = false, fullLoadAt = Date.now();
+  const follow = setInterval(async () => {
+    if (closed || following || queue || !sid || document.hidden || source || (live && live.state !== 'closed')) return;
+    following = true;
+    try {
+      if (offset == null) { // a failed load (offline) is not retried on every tick
+        if (Date.now() - fullLoadAt > 15000 || live?.state === 'closed') { fullLoadAt = Date.now(); await loadHistory(); }
+        return;
+      }
+      const v = await api(`/api/project/${pid}/session/${sid}/since?offset=${offset}`);
+      if (closed || queue || source || (live && live.state !== 'closed')) return;
+      if (v.reset) { offset = null; return; }
+      offset = v.offset;
+      if (v.items.length) { for (const o of v.items) drawItem(o); drawTasks(); }
+    } catch { /* offline or logged out: the next tick tries again */ } finally { following = false; }
+  }, 3000);
+
   if (sid) {
     loadHistory();
     loadProducts(false);
@@ -1997,7 +2017,7 @@ function chatView(pid, sid) {
   syncDraft();
   drawStatus();
 
-  return { close() { closed = true; closeStream(); clearTimeout(hiddenTimer); clearTimeout(drawTimer); clearTimeout(productTimer); clearTimeout(tick); document.removeEventListener('visibilitychange', visibility); } };
+  return { close() { closed = true; closeStream(); clearInterval(follow); clearTimeout(hiddenTimer); clearTimeout(drawTimer); clearTimeout(productTimer); clearTimeout(tick); document.removeEventListener('visibilitychange', visibility); } };
 }
 
 // ───────── share (from another app) ─────────
