@@ -233,10 +233,10 @@ test('UI: every view and event type draws without errors', async () => {
   assert.ok(texts(panel).includes('Alpha Site'));
   // The project's other chats: the back arrow says "Chats" (shown on the desktop too) and goes to the chat list.
   assert.ok(all.slice(from).some(e => e.tag === 'a' && e.className.includes('back') && !e.className.includes('home') && e.href === `#/p/${PID}` && e.title === 'Chats'));
-  // VS Code: opens this project and chat on the computer.
+  // VS Code: the top bar button opens only the project on the computer, not the chat in the Claude panel.
   const vscodeButton = all.slice(from).find(e => e.className.includes('vscode-button'));
   for (const f of vscodeButton.listeners.click) await f(event(vscodeButton));
-  assert.deepEqual(requests.findLast(i => i.url === `/api/project/${PID}/vscode`)?.body, { session: SID });
+  assert.deepEqual(requests.findLast(i => i.url === `/api/project/${PID}/vscode`)?.body, {});
   // Effort: the "default" option writes the real value, the status bar the last request's effort.
   assert.equal(all.slice(from).find(e => e.tag === 'option' && e.value === '' && texts(e)[0]?.startsWith('Effort'))?.textContent, 'Effort: medium (default)');
   assert.equal(all.slice(from).find(e => e.tag === 'option' && e.value === '' && texts(e)[0] === 'Model')?.textContent, 'Model: Opus (default)');

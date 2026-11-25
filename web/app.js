@@ -816,7 +816,7 @@ function projectPage(pid, tab) {
         { label: 'Rename…', onClick: () => renameChat(pid, s.id, s.title, () => load(false)) },
         { label: s.archived ? 'Move back to the list' : 'Archive', hint: s.archived ? '' : 'hidden in "Archived"', onClick: flag('archived', !s.archived) },
         'line',
-        { label: 'Open in VS Code', onClick: () => openInVSCode(pid, { session: s.id }) },
+        { label: 'Open this chat in VS Code', hint: 'Claude panel', onClick: () => openInVSCode(pid, { session: s.id }) },
       ], { class: 'btn small flat row-menu', title: 'Chat options', 'aria-label': `Options of ${s.title}` }));
   }
   function drawChats() {
@@ -1412,9 +1412,10 @@ function chatView(pid, sid) {
   if (sid && openBoxes.has(panelKey)) openProductPanel(true);
 
   const titleRow = h('div', { class: 'title-tabs' }, titleEl, productButton);
-  // Opens the project (and this chat in Claude Code's VS Code panel) on the computer; Kumanda's idle process is closed first.
-  const vscodeButton = h('button', { class: 'btn small vscode-button', type: 'button', title: 'Open this project and chat in VS Code on the computer',
-    onclick: () => openInVSCode(pid, { session: sid || null }) }, 'VS Code');
+  // Opens only the project folder in VS Code on the computer (owner's wish, 2026-11-25: not the chat in the Claude panel too;
+  // that is "Open this chat in VS Code" in the chat list's menu).
+  const vscodeButton = h('button', { class: 'btn small vscode-button', type: 'button', title: 'Open this project in VS Code on the computer',
+    onclick: () => openInVSCode(pid, {}) }, 'VS Code');
   let flags = {};
   const chatMenu = menuButton('⋯', () => [
     sid && { label: 'Rename…', onClick: () => renameChat(pid, sid, titleEl.textContent, t => { titleEl.textContent = t; }) },
