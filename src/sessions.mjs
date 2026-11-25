@@ -540,6 +540,31 @@ class Run {
 
 export const findRun = session => runs.get(session) || null;
 
+// Claude Code processes started outside Kumanda (terminal, VS Code, the desktop app). Claude Code keeps a status file per
+// process: ~/.claude/sessions/<pid>.json { pid, sessionId, cwd, status: "busy" | "idle", entrypoint, … } (seen on 2.1.330).
+// Files of ended processes can stay behind, so the process must still exist. Kumanda's own processes are left out.
+let elsewhereCache = { at: 0, list: [] };
+export function runsElsewhere() {
+  if (Date.now() - elsewhereCache.at < 2000) return elsewhereCache.list;
+  const dir = path.join(CLAUDE_DIR, 'sessions');
+  const ours = new Set([...runs.values()].filter(r => !r.closed).map(r => r.session));
+  const list = [];
+  let names = [];
+  try { names = fs.readdirSync(dir).filter(n => /^\d+\.json$/.test(n)); } catch { /* no such folder (older Claude Code) */ }
+  for (const n of names) {
+    let o;
+    try { o = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch { continue; }
+    if (typeof o?.sessionId !== 'string' || typeof o.cwd !== 'string' || typeof o.status !== 'string' || o.status === 'idle' || ours.has(o.sessionId)) continue;
+    try { process.kill(o.pid, 0); } catch (e) { if (e.code !== 'EPERM') continue; } // ESRCH: the process has ended
+    const state = /wait|permission|input|question/i.test(o.status) ? 'waiting' : 'running';
+    if (!list.some(x => x.session === o.sessionId)) list.push({ session: o.sessionId, cwd: path.resolve(o.cwd).toLowerCase(), state, app: o.entrypoint || '' });
+  }
+  elsewhereCache = { at: Date.now(), list };
+  return list;
+}
+export const elsewhereIn = project => runsElsewhere().filter(r => r.cwd === path.resolve(project.path).toLowerCase());
+export const elsewhereSession = session => runsElsewhere().find(r => r.session === session) || null;
+
 export function listRuns() {
   return [...runs.values()].filter(r => !r.closed)
     .map(r => ({ session: r.session, project: r.project.id, projectName: r.project.name, state: r.state, turnStart: r.turnStart,

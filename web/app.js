@@ -810,7 +810,7 @@ function projectPage(pid, tab) {
         h('span', { class: `dot ${s.live || ''}` }),
         h('div', { class: 'body' }, h('div', { class: 'name' }, s.title, s.pinned && h('span', { class: 'badge', style: 'margin-left:6px' }, 'pinned')), h('div', { class: 'info' }, timeAgo(s.mtime))),
         s.live === 'waiting' && h('span', { class: 'badge warn' }, 'waiting for answer'),
-        s.live === 'running' && h('span', { class: 'badge accent' }, 'running')),
+        s.live === 'running' && h('span', { class: 'badge accent', title: s.elsewhere ? 'Working in the terminal, VS Code or the Claude app' : '' }, s.elsewhere ? 'running elsewhere' : 'running')),
       menuButton('⋯', () => [
         { label: s.pinned ? 'Unpin' : 'Pin to the top', onClick: flag('pinned', !s.pinned) },
         { label: 'Rename…', onClick: () => renameChat(pid, s.id, s.title, () => load(false)) },
@@ -952,6 +952,9 @@ async function renameChat(pid, sid, current, then) {
   try { await api(`/api/project/${pid}/session/${sid}/meta`, { title }); toast('Renamed'); paletteChats.pid = null; then?.(title); refreshProjects(); }
   catch (x) { if (x.status !== 401) toast(x.message); }
 }
+
+// Where a chat working outside Kumanda runs (the "entrypoint" in Claude Code's process status file).
+const appName = app => /desktop/i.test(app) ? 'the Claude app' : /vscode/i.test(app) ? 'VS Code' : app === 'cli' ? 'the terminal' : 'another window';
 
 async function openInVSCode(pid, body) {
   try {
@@ -1289,7 +1292,7 @@ async function projectCommands(pid) {
 }
 
 function chatView(pid, sid) {
-  let source = null, marker = '', live = null, activity = '', closed = false, queue = null, offset = null;
+  let source = null, marker = '', live = null, activity = '', closed = false, queue = null, offset = null, elsewhere = null;
   let streamingEl = null, streamingText = '', drawTimer = 0, hiddenTimer = 0;
   const tools = new Map(), permissions = new Map(), btws = new Map(), attachments = [];
   const prompts = []; // your prompts in this chat, for ↑/↓ in an empty composer and "Retry"
@@ -1774,7 +1777,10 @@ function chatView(pid, sid) {
     stopButton.hidden = !working;
     nowButton.hidden = !working;
     const elapsed = live?.turnStart && working ? ` ${formatDuration(Date.now() - live.turnStart)}` : '';
-    const left = d === 'running' ? `${activity || 'Working'}…${elapsed}` : d === 'waiting' ? 'Waiting for your answer' : d === 'ready' ? 'Ready' : '';
+    // Working outside Kumanda (terminal, VS Code, the Claude app): Kumanda only watches, it has no process of its own here.
+    const away = !working && elsewhere ? elsewhere : null;
+    const left = away ? `${away.state === 'waiting' ? 'Waiting for an answer' : 'Working'} in ${appName(away.app)}`
+      : d === 'running' ? `${activity || 'Working'}…${elapsed}` : d === 'waiting' ? 'Waiting for your answer' : d === 'ready' ? 'Ready' : '';
     clearTimeout(tick);
     if (working && !closed) tick = setTimeout(drawStatus, 1000); // the elapsed time counts up
     // Usage arrives after a request; with no open process the last value saved by the server is shown. A window whose
@@ -1789,7 +1795,7 @@ function chatView(pid, sid) {
       l?.fiveHour != null && valid(l.fiveHourResetsAt) ? `5h ${Math.round(l.fiveHour * 100)}%` : null,
       l?.sevenDay != null && valid(l.sevenDayResetsAt) ? `week ${Math.round(l.sevenDay * 100)}%` : null].filter(Boolean).join(' · ');
     const resets = [l?.fiveHourResetsAt && `5-hour window ${formatMoment(l.fiveHourResetsAt * 1000)}`, l?.sevenDayResetsAt && `weekly ${formatMoment(l.sevenDayResetsAt * 1000)}`].filter(Boolean).join(', ');
-    statusEl.replaceChildren(d && d !== 'closed' ? h('span', { class: `dot ${d}` }) : '', h('span', {}, left), h('span', { class: 'spacer' }),
+    statusEl.replaceChildren(away ? h('span', { class: `dot ${away.state}` }) : d && d !== 'closed' ? h('span', { class: `dot ${d}` }) : '', h('span', {}, left), h('span', { class: 'spacer' }),
       h('span', { title: `Model · effort of the last request · tokens in the context window · 5-hour and weekly usage${resets ? `. Resets: ${resets}` : ''}${l?.at ? ` (last measured ${formatMoment(l.at)})` : ''}` }, right));
     labelEffort();
     if (live?.mode && d !== 'closed' && modeSelect.value !== live.mode) modeSelect.value = live.mode;
@@ -1847,6 +1853,7 @@ function chatView(pid, sid) {
       drawTasks();
       live = v.live;
       offset = v.offset ?? 0;
+      elsewhere = v.elsewhere || null;
       historyLastRequest = v.lastRequest || null;
       savedLimit = v.limit || null;
       drawStatus();
@@ -1868,8 +1875,9 @@ function chatView(pid, sid) {
     if (!text && !attachments.length) return;
     const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(text);
     if (btw) { sendBtw((btw[1] || '').trim()); return; }
-    sendButton.disabled = true;
     const working = live?.state === 'running' || live?.state === 'waiting';
+    if (!working && elsewhere && !confirm(`This chat is working in ${appName(elsewhere.app)} right now. Sending from here starts a second Claude on the same chat, and the two can mix up its messages. Send anyway?`)) return;
+    sendButton.disabled = true;
     try {
       const r = await api(`/api/project/${pid}/send`, { session: sid, text, images: attachments.map(e => ({ type: e.type, data: e.data })), mode, model, effort: effortSelect.value,
         ...(now && working ? { now: true } : {}) });
@@ -1999,6 +2007,10 @@ function chatView(pid, sid) {
       if (closed || queue || source || (live && live.state !== 'closed')) return;
       if (v.reset) { offset = null; return; }
       offset = v.offset;
+      if (Boolean(v.elsewhere) !== Boolean(elsewhere) || v.elsewhere?.state !== elsewhere?.state) {
+        if (elsewhere && !v.elsewhere) offset = null; // it finished there: reload once so the turn's "Worked for" line shows
+        elsewhere = v.elsewhere || null; drawStatus(); refreshProjects();
+      }
       if (v.items.length) { for (const o of v.items) drawItem(o); drawTasks(); }
     } catch { /* offline or logged out: the next tick tries again */ } finally { following = false; }
   }, 3000);

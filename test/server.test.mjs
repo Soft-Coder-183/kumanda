@@ -726,6 +726,31 @@ test('a chat going on outside Kumanda: a prompt sharing its message with a syste
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a chat working outside Kumanda shows as running (Claude Code\'s process status files); idle or ended ones do not', async () => {
+  const beta = (await request('/api/projects')).j.projects.find(p => p.name === 'Beta');
+  const dir = path.join(claudeDir, 'projects', path.join(projectsDir, 'Beta').replace(/[^a-zA-Z0-9]/g, '-'));
+  const sid = '77777777-7777-4777-8777-777777777777';
+  writeFile(path.join(dir, `${sid}.jsonl`), JSON.stringify({ type: 'user', message: { role: 'user', content: 'build it' }, cwd: path.join(projectsDir, 'Beta'), timestamp: new Date().toISOString() }) + '\n');
+  const status = (pid, o) => writeFile(path.join(claudeDir, 'sessions', `${pid}.json`), JSON.stringify({ pid, cwd: path.join(projectsDir, 'Beta'), entrypoint: 'claude-desktop', ...o }));
+  status(process.pid, { sessionId: sid, status: 'busy' }); // the test process: alive
+  status(2147483000, { sessionId: '66666666-6666-4666-8666-666666666666', status: 'busy' }); // ended long ago
+  status(process.ppid, { sessionId: '55555555-5555-4555-8555-555555555555', status: 'idle' });
+  await new Promise(c => setTimeout(c, 2100)); // the status files are read at most every 2 s
+  assert.deepEqual((await request('/api/projects')).j.projects.find(p => p.name === 'Beta').live, ['running']);
+  const chats = (await request(`/api/project/${beta.id}`)).j.sessions;
+  assert.deepEqual(chats.filter(s => s.live).map(s => [s.id, s.live, s.elsewhere]), [[sid, 'running', true]]);
+  const h = await request(`/api/project/${beta.id}/session/${sid}`);
+  assert.equal(h.j.elsewhere?.state, 'running');
+  assert.equal(h.j.elsewhere?.app, 'claude-desktop');
+  assert.equal((await request(`/api/project/${beta.id}/session/${sid}/since?offset=${h.j.offset}`)).j.elsewhere?.state, 'running');
+  status(process.pid, { sessionId: sid, status: 'idle' });
+  await new Promise(c => setTimeout(c, 2100));
+  assert.deepEqual((await request('/api/projects')).j.projects.find(p => p.name === 'Beta').live, []);
+  assert.equal((await request(`/api/project/${beta.id}/session/${sid}`)).j.elsewhere, null);
+  fs.rmSync(path.join(claudeDir, 'sessions'), { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('git: status, file diff and commit diff of a project (read only)', async () => {
   const dir = path.join(projectsDir, 'Alpha');
   const g = (...a) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...a], { cwd: dir, encoding: 'utf8' });

@@ -12,7 +12,7 @@ import { config, watchConfig, saveConfig, loadConfig, atomicWrite, ROOT, DATA } 
 import { HttpError, Router, cookies, setCookie, sendFile, plainText, requestInfo, json, readJson, redirect } from './src/http.mjs';
 import * as auth from './src/auth.mjs';
 import { readFileForView, safePath, listFolder, sessionFile, listSessions, findProject, hideProject, listProjects, hideProducts, listProducts, linkProductsToSessions } from './src/projects.mjs';
-import { EFFORTS, MODELS, MODES, setNotifier, effortSettings, readHistory, readSince, send, closeAllRuns, findRun, listRuns, lastRequest, getLastLimit } from './src/sessions.mjs';
+import { EFFORTS, MODELS, MODES, setNotifier, effortSettings, readHistory, readSince, send, closeAllRuns, findRun, listRuns, lastRequest, getLastLimit, elsewhereIn, elsewhereSession } from './src/sessions.mjs';
 import * as push from './src/push.mjs';
 import { interleave, askBtw, btwExists, btwQuestions } from './src/btw.mjs';
 import { DRAFT_KEY, getDraft, setDraft, getSnippets, setSnippets, SNIPPET_LIMIT, SNIPPET_TEXT, chatFlags, setChatFlags } from './src/store.mjs';
@@ -206,7 +206,7 @@ api.add('GET', '/api/projects', async ({ res, url }) => {
   const live = listRuns();
   const list = await Promise.all(projects.map(async p => {
     const products = await listProducts(p);
-    return { ...projectSummary(p), productCount: products.filter(u => !u.secondary).length, live: live.filter(r => r.project === p.id).map(r => r.state) };
+    return { ...projectSummary(p), productCount: products.filter(u => !u.secondary).length, live: [...live.filter(r => r.project === p.id).map(r => r.state), ...elsewhereIn(p).map(r => r.state)] };
   }));
   json(res, 200, { projects: list });
 });
@@ -257,7 +257,9 @@ api.add('POST', '/api/project-add', async ({ req, res }) => {
 api.add('GET', '/api/project/:pid', async ({ res, params }) => {
   const project = await getProject(params.pid);
   const live = new Map(listRuns().filter(r => r.project === project.id).map(r => [r.session, r.state]));
-  const sessions = (await listSessions(project)).map(s => ({ id: s.id, title: s.title, mtime: s.mtime, live: live.get(s.id) || null, ...chatFlags(s.id) }));
+  const elsewhere = new Map(elsewhereIn(project).map(r => [r.session, r.state])); // working in the terminal, VS Code, the desktop app
+  const sessions = (await listSessions(project)).map(s => ({ id: s.id, title: s.title, mtime: s.mtime, live: live.get(s.id) || elsewhere.get(s.id) || null,
+    elsewhere: !live.has(s.id) && elsewhere.has(s.id), ...chatFlags(s.id) }));
   // New live sessions whose transcript has not been written yet show up in the list too.
   for (const [session, state] of live) if (!sessions.some(s => s.id === session)) sessions.unshift({ id: session, title: 'New chat', mtime: Date.now(), live: state });
   json(res, 200, { project: projectSummary(project), sessions });
@@ -315,7 +317,7 @@ api.add('GET', '/api/project/:pid/session/:sid', async ({ res, params, url }) =>
   const first = history.truncated ? history.items.find(o => o.at)?.at || 0 : 0;
   const btws = (await btwQuestions(params.sid)).filter(y => y.at >= first && !(r && !r.closed && y.at >= r.historyLimitAt));
   json(res, 200, { ...history, items: interleave(history.items, btws), live: r ? r.snapshot() : null,
-    lastRequest: file ? await lastRequest(file) : null, limit: getLastLimit() });
+    lastRequest: file ? await lastRequest(file) : null, limit: getLastLimit(), elsewhere: r && !r.closed ? null : elsewhereSession(params.sid) });
 });
 
 // Following a chat that goes on outside Kumanda (terminal, VS Code, desktop app): the items added after byte `offset`
@@ -326,7 +328,7 @@ api.add('GET', '/api/project/:pid/session/:sid/since', async ({ res, params, url
   if (!Number.isSafeInteger(offset) || offset < 0) throw new HttpError(400, 'Invalid offset');
   const file = await sessionFile(project, params.sid);
   if (!file) throw new HttpError(404, 'Session not found');
-  json(res, 200, await readSince(file, offset));
+  json(res, 200, { ...await readSince(file, offset), elsewhere: elsewhereSession(params.sid) });
 });
 
 // /btw side question: a tool-less copy of the chat that is never written to disk answers it; the chat itself does not
