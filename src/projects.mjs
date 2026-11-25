@@ -176,6 +176,17 @@ export function userText(content) {
   return content.filter(b => b.type === 'text').map(b => b.text).join('\n');
 }
 
+/**
+ * The part of a user message the user typed. Claude Code may put a system note into the same message as the prompt
+ * (seen 2026-11-25 on 2.1.330: [image, "<system-reminder>…", prompt] after a resume), so text blocks are judged one by
+ * one: `<system-reminder>` sections are cut out and blocks matching `hidden` (skill contents, command output…) dropped.
+ */
+export function typedText(content, hidden) {
+  const blocks = typeof content === 'string' ? [content] : Array.isArray(content) ? content.filter(b => b.type === 'text').map(b => b.text) : [];
+  return blocks.map(t => String(t).replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim())
+    .filter(t => t && !hidden.test(t)).join('\n');
+}
+
 async function findTitle(file, size) {
   const head = await readChunk(file, 0, 262144);
   const tail = size > 262144 ? await readChunk(file, Math.max(262144, size - 131072), 131072) : '';
@@ -187,8 +198,8 @@ async function findTitle(file, size) {
       try {
         const o = JSON.parse(line);
         if (o.type === 'user' && !o.isMeta && !o.isSidechain) {
-          const t = userText(o.message?.content).trim();
-          if (t && !HIDDEN_PREFIX.test(t)) first = t.replace(/\s+/g, ' ').slice(0, 90);
+          const t = typedText(o.message?.content, HIDDEN_PREFIX);
+          if (t) first = t.replace(/\s+/g, ' ').slice(0, 90);
         }
       } catch { /* partial line */ }
     }

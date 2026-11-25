@@ -2,7 +2,7 @@
 // project's chats. Transcripts are read line by line; a cheap text check comes before JSON parsing.
 import fs from 'node:fs';
 import readline from 'node:readline';
-import { listSessions, userText } from './projects.mjs';
+import { listSessions, typedText } from './projects.mjs';
 
 const lower = s => s.toLocaleLowerCase('tr');
 const NOT_TYPED = /^\s*(<|Caveat:|Base directory for this skill:|\[Request interrupted|\[Side question)/;
@@ -27,8 +27,8 @@ async function searchFile(file, q) {
       let text = '';
       if (o.type === 'user') {
         if (Array.isArray(content) && content.some(b => b.type === 'tool_result')) continue;
-        text = userText(content);
-        if (NOT_TYPED.test(text)) continue;
+        text = typedText(content, NOT_TYPED);
+        if (!text) continue;
       } else if (o.type === 'assistant' && Array.isArray(content)) text = content.filter(b => b.type === 'text').map(b => b.text).join('\n');
       const i = lower(text).indexOf(q);
       if (i < 0) continue;
