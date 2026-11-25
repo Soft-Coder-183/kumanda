@@ -8,7 +8,8 @@ this file `PROJE_DEVIR.md` and the build files `DERLE.md`/`derle.ps1`; in this p
 - **Owner:** Eren (speaks Turkish; replies to them in Turkish). For their own use; the repository is public (MIT).
 - **Repository:** https://github.com/Soft-Coder-183/kumanda (public since 2026-11-16). Releases are GitHub tags + releases; nothing
   is built, so no files are attached (the source zip is enough).
-- **Status:** 2.3.1 (2026-11-24): the sidebar "Now" list removed (owner's wish: it repeated running projects under the chat
+- **Status:** 2.4.0 (2026-11-25): live follow of chats going on outside Kumanda, prompts sharing a message with a system
+  note no longer hidden. 2.3.1 (2026-11-24): the sidebar "Now" list removed (owner's wish: it repeated running projects under the chat
   name). 2.3.0 (2026-11-23): "/" menu, Claude artifacts, project order by the last message. 2.2.0 (2026-11-22): search everything (Ctrl+K), chat pin/rename/archive and message search,
   the Changes (git) tab, scheduled prompts, saved prompts, drafts shared between devices, task panel, copy buttons, themes. 2.1.0 (2026-11-21): `/btw` reuses the chat's prompt cache, "Chats"/"Back to chat" navigation, the VS Code button,
   the handover/build files renamed. 2.0.0 (same day): the whole repository moved from Turkish to English. The server and the Claude protocol were tried with real Claude Code 2.1.322/2.1.329. The UI is tried in
@@ -88,6 +89,7 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | Chat comforts (2.2.0) | Copy/Edit again under messages, code copy, ↑/↓ prompt recall, Esc stops, "Latest" jump button, task panel (TaskCreate/TaskUpdate, TodoWrite), context tokens and working time in the status bar, export Markdown, error "Retry" |
 | Share (2.2.0) | Manifest `share_target` GET to `/` → `?text=` is moved to `sessionStorage` and `#/share` asks for the project |
 | Appearance (2.2.0) | `html[data-theme]` (light/dark, else the system) and `html[data-size]`, per device in Settings |
+| Following (2.4.0) | A chat open in Kumanda without a Kumanda process (going on in the terminal, VS Code, the desktop app) polls `GET /api/project/:pid/session/:sid/since?offset=` every 3 s while the page is visible; the history route returns `offset` (end of the last complete line). `reset: true` (file shorter or > 8 MB added) → full reload. No "Worked for" line is added while following (it appears on the next full load) |
 | "/" menu (2.3.0) | `GET /api/project/:pid/commands` → `{commands: [{name, description, kind}], fromClaude}`; composer menu while the text up to the caret is `/word` |
 | Artifacts (2.3.0) | `GET /api/project/:pid/artifacts[?session=]`; card in the chat on the publish result, chat Products panel and project Products tab |
 
@@ -325,6 +327,10 @@ password and the login limit are the only protection.
   interrupted turn's `result` may arrive after the new prompt's `user` event. A plain Enter writes the prompt to stdin; the CLI
   queues it.
 - With `--include-partial-messages` every content block comes as a separate `assistant` line and text pieces as `stream_event`.
+- **A system note can share the user's message (seen 2026-11-25, 2.1.330, after a resume in the desktop app):** content was
+  `[image, text "<system-reminder>…</system-reminder>", text <the prompt>]`. Judging the joined text by its start hid the whole
+  prompt. `typedText()` (`src/projects.mjs`) judges text blocks one by one and cuts `<system-reminder>` sections; history, chat
+  titles and search use it.
 - In a new session we give the id with `--session-id <uuid>`; `--resume` continues the same id and the same transcript file.
 - In a working folder with a short (8.3) path (`C:\Users\NAME~1\…`) Claude Code refuses to write ("suspicious path"); projects are
   kept with long paths.

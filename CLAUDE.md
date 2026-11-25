@@ -3,7 +3,7 @@
 A local server + web UI that lets Eren use the Claude Code on their computer and the products of all their projects (HTML, APK,
 EXE, ZIP, video, documents) from the phone or another computer. Dependency-free Node.js (22+), no build step. The server only
 listens on `127.0.0.1`; remote access comes through Tailscale forwarding (set up, own network only). Public repository (MIT):
-https://github.com/Soft-Coder-183/kumanda. Status: 2.3.1 (2026-11-24: sidebar "Now" list removed; 2.3.0 2026-11-23: "/" menu, Claude artifacts, project order by last message; 2.2.1 limit-reset fix; 2.2.0 2026-11-22: search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
+https://github.com/Soft-Coder-183/kumanda. Status: 2.4.0 (2026-11-25: live follow of chats running outside Kumanda, prompts sharing a message with a system note shown; 2.3.1 2026-11-24: sidebar "Now" list removed; 2.3.0 2026-11-23: "/" menu, Claude artifacts, project order by last message; 2.2.1 limit-reset fix; 2.2.0 2026-11-22: search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
 the agent. Details: `HANDOVER.md` (read the relevant section when needed). The owner speaks Turkish: reply to them in Turkish.
 
 ## Commands
@@ -66,7 +66,7 @@ the agent. Details: `HANDOVER.md` (read the relevant section when needed). The o
 ## In the handover document
 - Architecture, Security model: before touching auth, origin, tunnel or product serving
 - 2.0.0: the English rename: data folder migration, kept names, updating a running 1.x server
-- Features table + "2.2.0 notes" / "2.3.0 notes": the routes and stores added since 2.2.0 ("/" list, artifacts, project order)
+- Features table + "2.2.0 notes" / "2.3.0 notes": the routes and stores added since 2.2.0 ("/" list, artifacts, project order, following)
 - VS Code button: before touching `/api/project/:pid/vscode` (why a panel and not a terminal)
 - Claude Code protocol: before touching `src/sessions.mjs` or when Claude Code is updated
 - /btw side questions: before touching `src/btw.mjs` or how the chat history is merged (also: context and cache behaviour)
