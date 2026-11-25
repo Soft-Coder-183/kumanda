@@ -8,7 +8,8 @@ this file `PROJE_DEVIR.md` and the build files `DERLE.md`/`derle.ps1`; in this p
 - **Owner:** Eren (speaks Turkish; replies to them in Turkish). For their own use; the repository is public (MIT).
 - **Repository:** https://github.com/Soft-Coder-183/kumanda (public since 2026-11-16). Releases are GitHub tags + releases; nothing
   is built, so no files are attached (the source zip is enough).
-- **Status:** 2.4.0 (2026-11-25): live follow of chats going on outside Kumanda, prompts sharing a message with a system
+- **Status:** 2.5.0 (2026-11-25): chats working outside Kumanda show as running (Claude Code's process status files), the chat's
+  VS Code button opens only the project. 2.4.0 (2026-11-25): live follow of chats going on outside Kumanda, prompts sharing a message with a system
   note no longer hidden. 2.3.1 (2026-11-24): the sidebar "Now" list removed (owner's wish: it repeated running projects under the chat
   name). 2.3.0 (2026-11-23): "/" menu, Claude artifacts, project order by the last message. 2.2.0 (2026-11-22): search everything (Ctrl+K), chat pin/rename/archive and message search,
   the Changes (git) tab, scheduled prompts, saved prompts, drafts shared between devices, task panel, copy buttons, themes. 2.1.0 (2026-11-21): `/btw` reuses the chat's prompt cache, "Chats"/"Back to chat" navigation, the VS Code button,
@@ -77,7 +78,8 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 | Settings | Device sessions, password change, adding a folder outside the roots, hidden projects |
 | Files | The project folder as a tree (like the VS Code explorer) and a read-only, highlighted file viewer |
 | Side questions | `/btw <question>`: a side question without interrupting the chat; the question and answer are kept, terminal ones' questions show too |
-| VS Code | `POST /api/project/:pid/vscode { session? }`: opens the project in VS Code on the computer and the chat in the Claude Code extension panel (see "VS Code button") |
+| VS Code | `POST /api/project/:pid/vscode { session?, file? }`: opens the project in VS Code on the computer; with `session` also the chat in the Claude Code extension panel (see "VS Code button"). Since 2.5.0 the chat's top bar button sends no session (owner's wish: it kept opening the chat panel, which then warned "still open somewhere else"); the chat list menu has "Open this chat in VS Code" |
+| Running elsewhere (2.5.0) | `runsElsewhere()` (`src/sessions.mjs`) reads Claude Code's process status files `~/.claude/sessions/<pid>.json` (`sessionId`, `cwd`, `status` busy/idle, `entrypoint` claude-desktop/cli/sdk-cli…; 2.1.330); a non-idle one whose process exists (`process.kill(pid, 0)`) and is not Kumanda's own counts. Matched to a project by exact `cwd`. Shown in `/api/projects` `live`, `/api/project/:pid` sessions (`elsewhere: true`), the history and `since` routes (`elsewhere: {state, app}`); the chat status says "Working in the Claude app"; sending then asks first (two processes on one chat). Read at most every 2 s |
 | Navigation | Chat top bar: "‹ Chats" → the project's chat list; file viewer: "‹ Back to chat" → the last chat opened in that project (`lastChat`, in memory per tab) |
 | Layout | On the desktop the sidebar and the files panel resize/close by dragging; on the phone swipeable drawers |
 | Runs | `GET /api/runs` (with chat titles) is kept for the API; the sidebar "Now" list that used it (2.2.0) was removed in 2.3.1 at the owner's wish (do not add it back). `localStorage['kumanda.seen']` is no longer used |
@@ -258,6 +260,7 @@ phone / other PC ──https──> Tailscale (serve: 443, 8443) ──> 127.0.0
 - Two writers on one transcript are avoided: if the chat's run is working → 409; if it is idle it is closed first (`closedRun`).
   400 bad session id, 404 no transcript, 501 VS Code not found. Same auth/origin checks as every `/api` (test "VS Code: …").
 - **Not tried for real by the agent** (only the fake): the real window, the URI handler, the panel picking up the session.
+- 2.5.0: the chat's top bar button opens only the folder; the chat panel only from the chat list menu ("Open this chat in VS Code").
 
 ### 2.2.0 notes
 - Every new route is behind the same auth/origin checks. Git runs only fixed read commands with an argument array; the path must

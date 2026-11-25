@@ -51,10 +51,12 @@ How it compares with VS Code, Remote Control and Claude Code on the web: [Why Ku
   the "Hidden by you" box under the same chat and comes back with **Show**; **Show all hidden** brings them all back.
 - **Move around easily.** In a chat, **‹ Chats** (top left) goes to the project's other chats; from a file, **‹ Back to chat**
   takes you back to the chat you were writing in.
-- **Continue on the computer in VS Code.** The VS Code button in a chat opens the project in VS Code on the computer, with the same
-  chat in the Claude Code panel (the chat must not be working at that moment; Kumanda hands it over).
-- **Watch chats running elsewhere.** A chat you continue in the terminal, VS Code or the Claude desktop app updates live in
-  Kumanda while you have it open: new prompts, replies and tool steps appear within a few seconds.
+- **Open it in VS Code on the computer.** The VS Code button in a chat opens the project folder in VS Code on the computer. To
+  continue the chat itself there, use **Open this chat in VS Code** in the chat list's menu: it opens in the Claude Code panel
+  (the chat must not be working at that moment; Kumanda hands it over).
+- **Watch chats running elsewhere.** A chat working in the terminal, VS Code or the Claude desktop app shows as running in
+  Kumanda (the dot next to the project, "running elsewhere" in the chat list, "Working in the Claude app" in the chat), and
+  updates live while you have it open: new prompts, replies and tool steps appear within a few seconds.
 - **Project files, like in VS Code.** The folder button (`Ctrl+Shift+E`) opens the project as a tree; files show with line numbers
   and syntax highlighting, Markdown with a preview, images directly. View only; files starting with a dot (`.env`…) are not shown.
 - **A flexible layout.** On the computer the project list and the files panel grow, shrink and close by dragging their edge
