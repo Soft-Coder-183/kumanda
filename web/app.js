@@ -1429,7 +1429,8 @@ function chatView(pid, sid) {
     'line',
     { label: 'Changes (git)', onClick: () => { location.hash = `#/p/${pid}/changes`; } },
     { label: 'Search this project\'s chats…', onClick: () => openPalette() },
-    sid && live && live.state === 'ready' && { label: 'Close the Claude process', hint: 'frees memory', onClick: () => api(`/api/session/${sid}/close`, {}).catch(x => toast(x.message)) },
+    sid && live && live.state !== 'closed' && { label: 'Close the Claude process', hint: live.state === 'ready' ? 'frees the chat for other apps' : 'stops the work',
+      onClick: () => api(`/api/session/${sid}/close`, {}).then(() => toast('Closing; the next prompt opens it again'), x => toast(x.message)) },
   ], { title: 'Chat options', 'aria-label': 'Chat options', class: 'btn small flat chat-menu' });
   async function setFlag(k, on) {
     try { flags = { ...flags, ...(await api(`/api/project/${pid}/session/${sid}/meta`, { [k]: on })) }; toast(k === 'pinned' ? (on ? 'Pinned' : 'Unpinned') : (on ? 'Archived' : 'Back in the list')); }
@@ -2093,7 +2094,14 @@ function settingsPage() {
         Object.entries(options).map(([v, t]) => h('option', { value: v, selected: (store.get(key) || fallback) === v }, t))));
     const snippetBox = h('textarea', { rows: 8, value: snippets.join('\n\n'), 'aria-label': 'Saved prompts', placeholder: 'One prompt per paragraph (separate them with an empty line)' });
 
+    const closeAll = h('button', { class: 'btn', type: 'button', onclick: async () => {
+      try { const r = await api('/api/runs/close', {}); toast(r.closed ? `Closing ${r.closed} Claude process${r.closed > 1 ? 'es' : ''}` : 'No Claude process is open'); refreshProjects(); }
+      catch (x) { toast(x.message); }
+    } }, 'Close all Claude processes');
+
     body.replaceChildren(
+      h('h2', {}, 'Claude processes'),
+      h('div', { class: 'card' }, h('p', { class: 'small muted' }, 'Kumanda keeps the Claude process of a chat open for 3 minutes after it finishes, then closes it. While it is open the Claude desktop app and VS Code see the chat as "open somewhere else" (they cannot import or continue it). This closes them all now; work in progress stops. The next prompt opens a chat again.'), closeAll),
       h('h2', {}, 'Appearance (this device)'),
       h('div', { class: 'card setting-choices' },
         choice('Theme', 'kumanda.theme', { auto: 'Like the system', light: 'Light', dark: 'Dark' }, 'auto'),

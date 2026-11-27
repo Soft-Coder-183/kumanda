@@ -22,7 +22,8 @@ const defaults = () => ({
   publicOrigins: {},             // control host → product origin (custom tunnel mapping; not needed for Tailscale)
   claude: null,                  // path to claude.exe or [command, ...args]; empty means "claude" from PATH
   vscode: null,                  // path to Code.exe; empty means found on PATH or in the usual install folders
-  idleCloseMinutes: 20,          // an idle Claude process is closed after this many minutes
+  idleCloseMinutes: 3,           // an idle Claude process is closed after this many minutes (so the chat is free for the
+                                 // desktop app or VS Code; the next prompt resumes it)
   pushContact: 'mailto:kumanda@example.com',
   password: null,                // { salt, hash } (scrypt)
 });
@@ -41,6 +42,7 @@ export function readJsonFile(file, fallback) {
 
 export function loadConfig() {
   const fresh = { ...defaults(), ...readJsonFile(FILE, {}) };
+  if (fresh.idleCloseMinutes === 20) fresh.idleCloseMinutes = 3; // the old default (< 2.6.0), saved into every config.json
   for (const k of Object.keys(config)) delete config[k];
   Object.assign(config, fresh);
   return config;

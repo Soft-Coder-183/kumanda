@@ -434,6 +434,8 @@ api.add('POST', '/api/session/:sid/permission', async ({ req, res, params }) => 
 
 api.add('POST', '/api/session/:sid/interrupt', async ({ res, params }) => { await getRun(params.sid).interrupt(); json(res, 200, { ok: true }); });
 api.add('POST', '/api/session/:sid/close', ({ res, params }) => { getRun(params.sid).close(); json(res, 200, { ok: true }); });
+// Every Claude process Kumanda started (so the chats can be opened or imported in the desktop app or VS Code).
+api.add('POST', '/api/runs/close', ({ res }) => { const n = listRuns().length; closeAllRuns(); json(res, 200, { closed: n }); });
 api.add('POST', '/api/session/:sid/mode', async ({ req, res, params }) => {
   const r = getRun(params.sid);
   const g = await readJson(req, 4096);
