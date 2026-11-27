@@ -63,6 +63,8 @@ How it compares with VS Code, Remote Control and Claude Code on the web: [Why Ku
   (`Ctrl+B`); on the phone the project list opens from the left when you swipe right and closes when you swipe left.
 - **Notifications.** When Claude finishes or waits for permission while the page is closed, your phone gets a notification
   (turned on per device).
+- **Hand chats back to the desktop app.** Kumanda closes a chat's Claude process 3 minutes after it finishes, so the Claude
+  desktop app and VS Code can open or import the chat; **Close all Claude processes** in Settings does it at once.
 - **The work does not stop when you disconnect.** Even if your phone goes to sleep Claude keeps working; when you come back you see
   it from where you left off.
 - **See what is running.** In the sidebar a project's dot shows whether one of its chats is working or waiting for you.

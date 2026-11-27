@@ -8,7 +8,9 @@ this file `PROJE_DEVIR.md` and the build files `DERLE.md`/`derle.ps1`; in this p
 - **Owner:** Eren (speaks Turkish; replies to them in Turkish). For their own use; the repository is public (MIT).
 - **Repository:** https://github.com/Soft-Coder-183/kumanda (public since 2026-11-16). Releases are GitHub tags + releases; nothing
   is built, so no files are attached (the source zip is enough).
-- **Status:** 2.5.0 (2026-11-25): chats working outside Kumanda show as running (Claude Code's process status files), the chat's
+- **Status:** 2.6.0 (2026-11-27): a run's state no longer counts prompts against results (a chat stayed "working" for 20 h and
+  Stop did nothing), Stop always stops, idle processes close after 3 min, "Close all Claude processes"; `CLAUDE.md` → `AGENTS.md`.
+  2.5.0 (2026-11-25): chats working outside Kumanda show as running (Claude Code's process status files), the chat's
   VS Code button opens only the project. 2.4.0 (2026-11-25): live follow of chats going on outside Kumanda, prompts sharing a message with a system
   note no longer hidden. 2.3.1 (2026-11-24): the sidebar "Now" list removed (owner's wish: it repeated running projects under the chat
   name). 2.3.0 (2026-11-23): "/" menu, Claude artifacts, project order by the last message. 2.2.0 (2026-11-22): search everything (Ctrl+K), chat pin/rename/archive and message search,
@@ -326,6 +328,15 @@ password and the login limit are the only protection.
 - **Selects give the focus back (2.0.0):** after a `change` on the mode/model/effort select the UI calls `select.blur()` and (not on
   touch screens) focuses the prompt, so Enter sends the prompt instead of reopening the menu. Checked in real Chrome by
   `tools/screenshots.mjs` (pick effort → type → Enter → reply with that effort).
+- **Turn state (2.6.0):** a `result` ends **every** prompt sent so far (`openTurns = 0`). Claude Code can fold a prompt sent during
+  a turn into that turn and answer both with one result; counting one result per prompt left a run "working" forever (2026-11-26:
+  20 h, Stop sent `interrupt` to an idle CLI and nothing came back). A queued prompt that does run as its own turn sets the run
+  running again on its first `assistant`/`stream_event` line. Safety nets: Stop waits 3 s for a result after the interrupt is
+  acknowledged and otherwise settles the run itself (`settle()`; no answer to the interrupt at all closes the process); every
+  15 s a run silent for 30 s whose own status file (`~/.claude/sessions/<pid>.json`) says `idle` is settled.
+- **Idle processes (2.6.0):** closed after `idleCloseMinutes` (default 3; an old saved 20 is read as 3). While Kumanda's process is
+  open the desktop app and VS Code treat the chat as "open somewhere else" and refuse to import it. Chat menu "Close the Claude
+  process" (any state), Settings "Close all Claude processes" (`POST /api/runs/close`).
 - **Send now (Ctrl+Enter, 1.3.0):** `now: true` on the `send` route while the run works first sends `interrupt`, then the prompt. The
   interrupted turn's `result` may arrive after the new prompt's `user` event. A plain Enter writes the prompt to stdin; the CLI
   queues it.
@@ -355,7 +366,7 @@ password and the login limit are the only protection.
 
 ## Rules
 
-Rules, commands and the commit/release practice are in `CLAUDE.md` (loaded every session); they are not repeated here.
+Rules, commands and the commit/release practice are in `AGENTS.md` (loaded every session through the one-line `CLAUDE.md`, `@AGENTS.md`); they are not repeated here.
 
 ## Development environment and pitfalls
 
