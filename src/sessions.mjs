@@ -317,6 +317,11 @@ class Run {
 
   #line(m) {
     this.lastActivity = Date.now();
+    // Claude is producing output while we think nothing is running: a prompt that was queued during the last turn now runs
+    // as its own turn (see `result`: a result ends every prompt sent so far).
+    if (this.openTurns === 0 && !m.parent_tool_use_id && (m.type === 'assistant' || m.type === 'stream_event')) {
+      this.openTurns = 1; this.turnStart = Date.now(); this.#transient(this.snapshot());
+    }
     switch (m.type) {
       case 'system':
         if (m.subtype === 'init') {
@@ -365,9 +370,12 @@ class Run {
       }
       case 'control_cancel_request': this.#closePermission(m.request_id, 'cancelled'); break;
       case 'result': {
-        this.openTurns = Math.max(0, this.openTurns - 1);
+        // Not "one result per prompt": Claude Code can fold a prompt sent during a turn into that turn and answer both with
+        // one result. Counting left the chat "working" forever (seen 2026-11-26: 20 h, Stop did nothing). A result ends
+        // everything sent so far; a queued prompt that still runs as its own turn sets it running again (top of #line).
+        this.openTurns = 0;
         this.streaming = null;
-        if (this.openTurns === 0) { this.finishedAt = Date.now(); this.turnStart = 0; }
+        this.finishedAt = Date.now(); this.turnStart = 0;
         for (const req of [...this.pending.keys()]) this.#closePermission(req, 'cancelled');
         const interrupted = this.interruptRequested && m.subtype !== 'success';
         this.interruptRequested = false;
@@ -484,7 +492,27 @@ class Run {
   async interrupt() {
     if (this.closed || this.openTurns === 0) return;
     this.interruptRequested = true;
-    await this.#sendControl({ subtype: 'interrupt' });
+    const r = await this.#sendControl({ subtype: 'interrupt' });
+    if (r.subtype !== 'success') { this.close(); return; } // the process does not answer at all: Stop ends it
+    // Claude Code may already be idle (a turn whose end we never saw): then no result comes. Stop must still stop.
+    setTimeout(() => { if (!this.closed && this.openTurns > 0 && this.interruptRequested) this.settle(); }, 3000).unref();
+  }
+
+  /** Marks the run idle without a result line from Claude Code (Stop on an idle process, or the status file says idle). */
+  settle() {
+    if (this.closed || this.openTurns === 0 || this.pending.size) return;
+    this.openTurns = 0; this.streaming = null; this.interruptRequested = false;
+    this.finishedAt = Date.now(); this.turnStart = 0;
+    this.#publish({ type: 'result', error: null, interrupted: true, durationMs: 0 });
+    this.#transient(this.snapshot());
+  }
+
+  /** Claude Code's own status for this process (~/.claude/sessions/<pid>.json: "busy" | "idle"), or null. */
+  processStatus() {
+    try {
+      const o = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, 'sessions', `${this.proc.pid}.json`), 'utf8'));
+      return o.sessionId === this.session && typeof o.status === 'string' ? o.status : null;
+    } catch { return null; }
   }
 
   async setMode(mode) {
@@ -602,6 +630,13 @@ setInterval(() => {
   const now = Date.now();
   for (const [session, r] of runs) {
     if (r.closed) { if (now - r.closedAt > 10 * 60e3 && r.listeners.size === 0) runs.delete(session); }
-    else if (r.state === 'ready' && now - r.lastActivity > (config.idleCloseMinutes || 20) * 60e3) r.close();
+    else if (r.state === 'ready' && now - r.lastActivity > (config.idleCloseMinutes || 3) * 60e3) r.close();
   }
 }, 60e3).unref();
+
+// Safety net: a run we think is working, silent for a while, whose process Claude Code itself reports idle, is idle.
+setInterval(() => {
+  for (const r of runs.values()) {
+    if (!r.closed && r.state === 'running' && Date.now() - r.lastActivity > 30e3 && r.processStatus() === 'idle') r.settle();
+  }
+}, 15e3).unref();

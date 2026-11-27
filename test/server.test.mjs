@@ -751,6 +751,28 @@ test('a chat working outside Kumanda shows as running (Claude Code\'s process st
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a turn whose end never comes: Stop still stops it; "close all" frees every chat for other apps', async () => {
+  const until = async (sid, ok, ms = 6000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      const v = (await request(`/api/project/${alpha}/session/${sid}`)).j;
+      if (ok(v)) return v;
+      if (Date.now() > end) assert.fail(`timed out: ${JSON.stringify(v.live)}`);
+      await new Promise(c => setTimeout(c, 200));
+    }
+  };
+  const sid = (await request(`/api/project/${alpha}/send`, { body: { text: 'answer with no result' } })).j.session;
+  await new Promise(c => setTimeout(c, 1500)); // the reply is written; no result line follows
+  assert.equal((await request(`/api/project/${alpha}/session/${sid}`)).j.live.state, 'running');
+  assert.equal((await request(`/api/session/${sid}/interrupt`, { body: {} })).status, 200);
+  await until(sid, v => v.live?.state === 'ready'); // Claude Code is idle and sends nothing: Kumanda settles after 3 s
+  // A result line ends every prompt sent so far (Claude Code can answer a prompt sent mid-turn in the same turn).
+  const r = await request('/api/runs/close', { body: {} });
+  assert.ok(r.j.closed >= 1);
+  await until(sid, v => !v.live || v.live.state === 'closed');
+  assert.ok(!(await request('/api/runs')).j.runs.some(x => x.session === sid));
+});
+
 test('git: status, file diff and commit diff of a project (read only)', async () => {
   const dir = path.join(projectsDir, 'Alpha');
   const g = (...a) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...a], { cwd: dir, encoding: 'utf8' });

@@ -76,6 +76,10 @@ async function turn(text) {
       write({ type: 'result', subtype: 'error_during_execution', is_error: true, duration_ms: 5, session_id: session });
       return;
     }
+  } else if (text.includes('no result')) {
+    // A turn whose end Kumanda never sees (the real CLI folds a prompt sent mid-turn into that turn: one result for two).
+    await streamText('I answered, but no result line follows.');
+    return;
   } else if (text.includes('artifact')) {
     // The Artifact tool publishes a page to claude.ai; the result carries its link.
     const id = `toolu_${++counter}`;
