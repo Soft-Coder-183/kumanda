@@ -3,7 +3,7 @@
 A local server + web UI that lets Eren use the Claude Code on their computer and the products of all their projects (HTML, APK,
 EXE, ZIP, video, documents) from the phone or another computer. Dependency-free Node.js (22+), no build step. The server only
 listens on `127.0.0.1`; remote access comes through Tailscale forwarding (set up, own network only). Public repository (MIT):
-https://github.com/Soft-Coder-183/kumanda. Status: 2.5.0 (2026-11-25: chats working outside Kumanda shown as running, VS Code button opens only the project; 2.4.0: live follow of chats running outside Kumanda, prompts sharing a message with a system note shown; 2.3.1 2026-11-24: sidebar "Now" list removed; 2.3.0 2026-11-23: "/" menu, Claude artifacts, project order by last message; 2.2.1 limit-reset fix; 2.2.0 2026-11-22: search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
+https://github.com/Soft-Coder-183/kumanda. Status: 2.6.0 (2026-11-27: a stuck "working" chat fixed (Stop always stops), idle Claude processes close after 3 min, "Close all Claude processes"; 2.5.0 2026-11-25: chats working outside Kumanda shown as running, VS Code button opens only the project; 2.4.0: live follow of chats running outside Kumanda, prompts sharing a message with a system note shown; 2.3.1 2026-11-24: sidebar "Now" list removed; 2.3.0 2026-11-23: "/" menu, Claude artifacts, project order by last message; 2.2.1 limit-reset fix; 2.2.0 2026-11-22: search, Changes tab, scheduled/saved prompts, shared drafts); real phone use not tried by
 the agent. Details: `HANDOVER.md` (read the relevant section when needed). The owner speaks Turkish: reply to them in Turkish.
 
 ## Commands
@@ -61,7 +61,7 @@ the agent. Details: `HANDOVER.md` (read the relevant section when needed). The o
 - Release: `package.json` version → note complete → commit → `git tag -a vX.Y.Z -m "Kumanda X.Y.Z"` → push → `gh release create vX.Y.Z
   --notes-file notes/vX.Y.Z.md` (no files attached). A published tag is never moved.
 - The README is user-facing; update it when a feature or command changes.
-- After every job update this file and `HANDOVER.md` (devret).
+- After every job update this file and `HANDOVER.md` (devret). `CLAUDE.md` only holds `@AGENTS.md` (global rule G5).
 
 ## In the handover document
 - Architecture, Security model: before touching auth, origin, tunnel or product serving
